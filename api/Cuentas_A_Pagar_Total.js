@@ -96,8 +96,9 @@ module.exports = async (req, res) => {
     /*
       Tu API devuelve JSON real
     */
-    return res.status(200).json(parsedData);
+    /*return res.status(200).json(parsedData);*/
 
+    return res.status(200).json(parsedData.data);
   } catch (err) {
 
     return res.status(500).json({
