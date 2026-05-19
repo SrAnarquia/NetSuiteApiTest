@@ -27,39 +27,24 @@ module.exports = async (req, res) => {
 
   try {
 
-    /*
-      RESTLET URL
-    */
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-    /*
-      PARAMS
-    */
     const params = {
       script: "5125",
       deploy: "1",
       subsidiary: req.query.subsidiary || "2",
     };
 
-    /*
-      OAUTH REQUEST DATA
-    */
     const request_data = {
       url: baseUrl,
       method: "GET",
       data: params,
     };
 
-    /*
-      GENERATE OAUTH
-    */
     const oauthData =
       oauth.authorize(request_data, token);
 
-    /*
-      AUTH HEADER
-    */
     const authHeader =
       'OAuth ' +
       `realm="${process.env.ACCOUNT_ID}",` +
@@ -73,9 +58,6 @@ module.exports = async (req, res) => {
         oauthData.oauth_signature
       )}"`;
 
-    /*
-      CALL RESTLET
-    */
     const response = await axios.get(baseUrl, {
 
       params,
@@ -89,7 +71,7 @@ module.exports = async (req, res) => {
     });
 
     /*
-      NETSUITE RETURNS STRING
+      PARSE RESPONSE
     */
     const parsedData =
       typeof response.data === "string"
@@ -97,16 +79,16 @@ module.exports = async (req, res) => {
         : response.data;
 
     /*
-      GET DATA
+      GET PERIODS ARRAY
     */
-    const restletData =
-      parsedData.data || parsedData;
+    const periods =
+      parsedData.periods || [];
 
     /*
-      FORMAT PERIODS
+      TRANSFORM ONLY PERIOD DATA
     */
     const formattedPeriods =
-      (restletData.periods || []).map(period => {
+      periods.map(period => {
 
         const weekStart =
           Object.keys(period)[0];
@@ -154,20 +136,11 @@ module.exports = async (req, res) => {
       });
 
     /*
-      FINAL RESPONSE
+      RETURN ONLY ARRAY
     */
-    return res.status(200).json({
-      success: true,
-
-      type:
-        restletData.type,
-
-      subsidiary:
-        restletData.subsidiary,
-
-      periods:
-        formattedPeriods
-    });
+    return res.status(200).json(
+      formattedPeriods
+    );
 
   } catch (err) {
 
