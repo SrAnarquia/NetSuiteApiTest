@@ -27,6 +27,9 @@ module.exports = async (req, res) => {
 
   try {
 
+    /*
+      RESTLET 5119
+    */
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
@@ -44,7 +47,7 @@ module.exports = async (req, res) => {
       method: "GET",
 
       data: {
-        script: "5117",
+        script: "5119",
         deploy: "1",
         subsidiary
       },
@@ -69,7 +72,7 @@ module.exports = async (req, res) => {
     const response = await axios.get(baseUrl, {
 
       params: {
-        script: "5117",
+        script: "5119",
         deploy: "1",
         subsidiary
       },
@@ -94,11 +97,12 @@ module.exports = async (req, res) => {
         : response.data;
 
     /*
-      Tu API devuelve JSON real
+      PERFECTO PARA POWERQUERY
     */
-    /*return res.status(200).json(parsedData);*/
+    return res.status(200).json([
+      parsedData.data
+    ]);
 
-    return res.status(200).json(parsedData.data);
   } catch (err) {
 
     return res.status(500).json({
