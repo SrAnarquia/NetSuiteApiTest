@@ -28,41 +28,28 @@ module.exports = async (req, res) => {
   try {
 
     /*
-      RESTLET URL
+      RESTLET 5123
     */
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-    /*
-      PARAMETROS
-    */
-    const params = {
-      script: "5122",
-      deploy: "1",
-    };
+    const subsidiary =
+      req.query.subsidiary || 2;
 
-    /*
-      IMPORTANTE:
-      request_data.data
-      y axios params
-      deben coincidir EXACTAMENTE
-    */
     const request_data = {
       url: baseUrl,
       method: "GET",
 
-      data: params,
+      data: {
+        script: "5123",
+        deploy: "1",
+        subsidiary
+      },
     };
 
-    /*
-      GENERAR OAUTH
-    */
     const oauthData =
       oauth.authorize(request_data, token);
 
-    /*
-      HEADER AUTH
-    */
     const authHeader =
       'OAuth ' +
       `realm="${process.env.ACCOUNT_ID}",` +
@@ -76,38 +63,33 @@ module.exports = async (req, res) => {
         oauthData.oauth_signature
       )}"`;
 
-    /*
-      LLAMAR RESTLET
-    */
     const response = await axios.get(baseUrl, {
 
-      params,
+      params: {
+        script: "5123",
+        deploy: "1",
+        subsidiary
+      },
 
       headers: {
         Authorization: authHeader,
         Accept: "application/json",
       },
 
-      /*
-        NetSuite normalmente responde STRING
-      */
       responseType: "text"
     });
 
-    /*
-      PARSEAR RESPUESTA
-    */
     const parsedData =
       typeof response.data === "string"
         ? JSON.parse(response.data)
         : response.data;
 
     /*
-      RETORNAR SOLO DATA
+      PERFECTO PARA POWERQUERY
     */
-    return res.status(200).json(
+    return res.status(200).json([
       parsedData.data
-    );
+    ]);
 
   } catch (err) {
 
