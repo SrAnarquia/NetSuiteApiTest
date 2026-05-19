@@ -23,15 +23,18 @@ const token = {
   secret: process.env.TOKEN_SECRET,
 };
 
-module.exports = async (req, res) => {
+async function getCashflowData() {
 
   try {
 
+    /*
+      RESTLET URL
+    */
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
     /*
-      PARAMS DEL RESTLET
+      PARAMETROS DEL RESTLET
     */
     const params = {
       script: "5122",
@@ -42,7 +45,7 @@ module.exports = async (req, res) => {
       IMPORTANTE:
       request_data.data
       y axios params
-      deben ser EXACTAMENTE iguales
+      deben coincidir EXACTAMENTE
     */
     const request_data = {
       url: baseUrl,
@@ -51,9 +54,15 @@ module.exports = async (req, res) => {
       data: params,
     };
 
+    /*
+      GENERAR OAUTH
+    */
     const oauthData =
       oauth.authorize(request_data, token);
 
+    /*
+      HEADER AUTH
+    */
     const authHeader =
       'OAuth ' +
       `realm="${process.env.ACCOUNT_ID}",` +
@@ -67,6 +76,9 @@ module.exports = async (req, res) => {
         oauthData.oauth_signature
       )}"`;
 
+    /*
+      LLAMAR RESTLET
+    */
     const response = await axios.get(baseUrl, {
 
       params,
@@ -77,13 +89,13 @@ module.exports = async (req, res) => {
       },
 
       /*
-        NetSuite devuelve STRING
+        NetSuite normalmente responde STRING
       */
       responseType: "text"
     });
 
     /*
-      Parse seguro
+      PARSEAR RESPUESTA
     */
     const parsedData =
       typeof response.data === "string"
@@ -91,15 +103,18 @@ module.exports = async (req, res) => {
         : response.data;
 
     /*
-      SOLO devuelve data
+      MOSTRAR SOLO DATA
     */
-    return res.status(200).json(
-      parsedData.data
-    );
+    console.log(parsedData.data);
+
+    /*
+      RETORNAR SOLO DATA
+    */
+    return parsedData.data;
 
   } catch (err) {
 
-    return res.status(500).json({
+    console.error({
       success: false,
 
       error:
@@ -107,4 +122,9 @@ module.exports = async (req, res) => {
         err.message,
     });
   }
-};
+}
+
+/*
+  EJECUTAR
+*/
+getCashflowData();
