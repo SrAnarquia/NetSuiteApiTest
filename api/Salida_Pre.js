@@ -89,7 +89,7 @@ module.exports = async (req, res) => {
       RESPONSE DEL RESTLET
     */
     const restletData =
-      parsedData.data || {};
+      parsedData.data || parsedData;
 
     /*
       FORMATEAR PERIODOS
@@ -124,27 +124,19 @@ module.exports = async (req, res) => {
       });
 
     /*
-      JSON FINAL
+      SOLO DEVOLVER DATA
     */
-    const finalJson = {
-      success: true,
+    return res.status(200).json({
 
-      data: {
+      type:
+        restletData.type,
 
-        type:
-          restletData.type,
+      subsidiary:
+        restletData.subsidiary,
 
-        subsidiary:
-          restletData.subsidiary,
-
-        periods:
-          formattedPeriods
-      }
-    };
-
-    return res
-      .status(200)
-      .json(finalJson);
+      periods:
+        formattedPeriods
+    });
 
   } catch (err) {
 
