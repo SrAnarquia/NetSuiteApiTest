@@ -30,19 +30,12 @@ module.exports = async (req, res) => {
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-    /*
-      PARAMS DEL RESTLET
-    */
     const params = {
       script: "5125",
       deploy: "1",
       subsidiary: req.query.subsidiary || "2",
     };
 
-    /*
-      IMPORTANTE:
-      data y params deben coincidir
-    */
     const request_data = {
       url: baseUrl,
       method: "GET",
@@ -86,25 +79,25 @@ module.exports = async (req, res) => {
         : response.data;
 
     /*
-      RESPONSE DEL RESTLET
+      OBTENER SOLO DATA
     */
     const restletData =
       parsedData.data || parsedData;
 
     /*
-      FORMATEAR PERIODOS
+      TRANSFORMAR PERIODS
     */
     const formattedPeriods =
       (restletData.periods || []).map(period => {
 
-        const key =
+        const weekStart =
           Object.keys(period)[0];
 
         const value =
-          period[key];
+          period[weekStart];
 
         return {
-          weekStart: key,
+          weekStart,
 
           startDate:
             value.startDate,
@@ -124,19 +117,11 @@ module.exports = async (req, res) => {
       });
 
     /*
-      SOLO DEVOLVER DATA
+      DEVOLVER SOLO ARRAY
     */
-    return res.status(200).json({
-
-      type:
-        restletData.type,
-
-      subsidiary:
-        restletData.subsidiary,
-
-      periods:
-        formattedPeriods
-    });
+    return res.status(200).json(
+      formattedPeriods
+    );
 
   } catch (err) {
 
