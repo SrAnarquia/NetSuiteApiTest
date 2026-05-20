@@ -27,9 +27,6 @@ module.exports = async (req, res) => {
 
   try {
 
-    const url =
-      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5127&deploy=1";
-
     let pageIndex = 0;
 
     let allRows = [];
@@ -75,19 +72,31 @@ module.exports = async (req, res) => {
       };
 
       /*
-        OAUTH
+        URL
+      */
+      const url =
+        "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5127&deploy=1";
+
+      /*
+        REQUEST DATA
       */
       const request_data = {
         url,
         method: "POST"
       };
 
+      /*
+        SIGNATURE
+      */
       const oauthData =
         oauth.authorize(
           request_data,
           token
         );
 
+      /*
+        AUTH HEADER
+      */
       const authHeader =
         'OAuth ' +
         `realm="${process.env.ACCOUNT_ID}",` +
@@ -125,57 +134,58 @@ module.exports = async (req, res) => {
         );
 
       /*
-        DETECTAR ROWS
+        DEBUG
       */
-      let rows = [];
+      console.log(
+        "STATUS:",
+        response.status
+      );
 
-      if (
-        Array.isArray(response.data)
-      ) {
-
-        rows =
-          response.data;
-
-      } else {
-
-        rows =
-          response.data.data ||
-          response.data.rows ||
-          response.data.results ||
-          response.data.items ||
-          [];
-      }
+      /*
+        DETECT ROWS
+      */
+      const rows =
+        response.data.data ||
+        response.data.rows ||
+        response.data.results ||
+        response.data.items ||
+        [];
 
       console.log(
         `ROWS ${rows.length}`
       );
 
       /*
-        SI YA NO HAY MÁS
-      */
-      if (!rows.length) {
-
-        break;
-      }
-
-      /*
-        ACUMULAR
+        ADD
       */
       allRows.push(...rows);
 
       /*
-        SIGUIENTE PÁGINA
+        FINISH
       */
+      if (
+        rows.length < 1000
+      ) {
+
+        break;
+      }
+
       pageIndex++;
     }
 
     /*
-      SOLO ARRAY
-      SIN WRAPPERS
+      SUCCESS
     */
-    return res
-      .status(200)
-      .json(allRows);
+    return res.status(200).json({
+
+      success: true,
+
+      totalRows:
+        allRows.length,
+
+      data:
+        allRows
+    });
 
   } catch (err) {
 
@@ -184,10 +194,13 @@ module.exports = async (req, res) => {
       err.message
     );
 
-    return res.status(500).json([{
+    return res.status(500).json({
+
+      success: false,
+
       error:
         err.response?.data ||
         err.message
-    }]);
+    });
   }
 };
