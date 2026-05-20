@@ -42,14 +42,12 @@ export default async function handler(req, res) {
     ==========================================
     */
 
-    // viene negativo en tu endpoint
-    // lo convertimos positivo
     const balanceApertura =
       Math.abs(Number(balanceData?.[0]?.total || 0));
 
     /*
     ==========================================
-    ARMAR TABLA
+    RESULTADO
     ==========================================
     */
 
@@ -62,32 +60,56 @@ export default async function handler(req, res) {
       const entradaSemana = entradaData[i];
       const salidaSemana = salidaData[i];
 
+      /*
+      ==========================================
+      FECHA
+      ==========================================
+      */
+
+      const semana =
+        entradaSemana.period ||
+        entradaSemana.weekStart ||
+        salidaSemana.period ||
+        salidaSemana.weekStart ||
+        null;
+
+      /*
+      ==========================================
+      ENTRADA
+      ==========================================
+      */
+
       const entrada =
-        Number(entradaSemana.totalInflow || 0);
+        Number(
+          entradaSemana.total_inflow ??
+          entradaSemana.totalInflow ??
+          0
+        );
+
+      /*
+      ==========================================
+      SALIDA
+      ==========================================
+      */
 
       const salida =
-        Number(salidaSemana.totalOutflow || 0);
+        Number(
+          salidaSemana.total_outflow ??
+          salidaSemana.totalOutflow ??
+          0
+        );
 
       /*
       ==========================================
       PREVISION
       ==========================================
-
-      Semana 1:
-      (Entrada - Salida) + Balance Apertura
-
-      Semana 2:
-      (Entrada - Salida) + Prev1
-
-      etc...
-      ==========================================
       */
 
       const prevision =
-        (entrada - salida) + previsionAnterior;
+        previsionAnterior + entrada - salida;
 
       resultado.push({
-        semanaDel: entradaSemana.period,
+        semanaDel: semana,
 
         entradaMXN: Number(
           entrada.toFixed(2)
@@ -107,15 +129,15 @@ export default async function handler(req, res) {
 
     /*
     ==========================================
-    RESPUESTA LIMPIA
+    RESPUESTA
     ==========================================
     */
 
-    res.status(200).json(resultado);
+    return res.status(200).json(resultado);
 
   } catch (error) {
 
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message
     });
 
