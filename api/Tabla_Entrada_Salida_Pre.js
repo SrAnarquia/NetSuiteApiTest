@@ -9,21 +9,15 @@ const axios = require("axios");
 const BALANCE_URL =
   "https://netsuiteapitest.vercel.app/api/Balance_Apertura.js";
 
-const OUTFLOW_URL =
-  "https://netsuiteapitest.vercel.app/api/Salida_PreV2.js";
-
 const INFLOW_URL =
-  "https://netsuiteapitest.vercel.app/api/Entrada_PreV2.js";
+  "https://netsuiteapitest.vercel.app/api/Entrada_PreV1.js";
+
+const OUTFLOW_URL =
+  "https://netsuiteapitest.vercel.app/api/Salida_PreV1.js";
 
 /*
 |--------------------------------------------------------------------------
 | DELAY CONTROL
-|--------------------------------------------------------------------------
-| IMPORTANTE:
-| NetSuite se rompe si haces llamadas simultáneas.
-| Por eso:
-|   - llamadas secuenciales
-|   - delay entre requests
 |--------------------------------------------------------------------------
 */
 
@@ -47,7 +41,7 @@ const toNumber = (value) => {
 
 /*
 |--------------------------------------------------------------------------
-| MAIN ENDPOINT
+| ENDPOINT
 |--------------------------------------------------------------------------
 */
 
@@ -56,12 +50,16 @@ module.exports = async (req, res) => {
   try {
 
     const subsidiary =
-      req.query.subsidiary || "2";
+      req.query.subsidiary || 2;
 
     /*
     |--------------------------------------------------------------------------
     | 1. BALANCE
     |--------------------------------------------------------------------------
+    |
+    | NO HACER TODO EN PARALELO
+    | NETSUITE SE SATURA
+    |
     */
 
     const balanceResponse =
@@ -74,21 +72,7 @@ module.exports = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | 2. OUTFLOW
-    |--------------------------------------------------------------------------
-    */
-
-    const outflowResponse =
-      await axios.get(OUTFLOW_URL, {
-        params: { subsidiary },
-        timeout: 120000
-      });
-
-    await sleep(1500);
-
-    /*
-    |--------------------------------------------------------------------------
-    | 3. INFLOW
+    | 2. INFLOW
     |--------------------------------------------------------------------------
     */
 
@@ -98,121 +82,78 @@ module.exports = async (req, res) => {
         timeout: 120000
       });
 
+    await sleep(1500);
+
     /*
     |--------------------------------------------------------------------------
-    | DATA
+    | 3. OUTFLOW
+    |--------------------------------------------------------------------------
+    */
+
+    const outflowResponse =
+      await axios.get(OUTFLOW_URL, {
+        params: { subsidiary },
+        timeout: 120000
+      });
+
+    /*
+    |--------------------------------------------------------------------------
+    | DATA EXTRACTION
     |--------------------------------------------------------------------------
     */
 
     const balanceData =
       balanceResponse.data || [];
 
-    const outflowData =
-      outflowResponse.data || [];
-
     const inflowData =
       inflowResponse.data || [];
 
+    const outflowData =
+      outflowResponse.data || [];
+
     /*
     |--------------------------------------------------------------------------
-    | BALANCE INICIAL
+    | OPENING BALANCE
     |--------------------------------------------------------------------------
     */
 
-    const initialBalance =
+    const openingBalance =
       toNumber(balanceData?.[0]?.total);
 
     /*
     |--------------------------------------------------------------------------
-    | MAP OUTFLOWS
+    | MAP OUTFLOW
     |--------------------------------------------------------------------------
     */
 
     const outflowMap = {};
 
-    outflowData.forEach(item => {
+    for (const row of outflowData) {
 
-      outflowMap[item.weekStart] = {
-        outflow: toNumber(item.totalOutflow)
-      };
-    });
+      outflowMap[row.weekStart] = row;
+    }
 
     /*
     |--------------------------------------------------------------------------
-    | MAP INFLOWS
+    | BUILD FINAL RESULT
     |--------------------------------------------------------------------------
     */
 
-    const inflowMap = {};
-
-    inflowData.forEach(item => {
-
-      inflowMap[item.weekStart] = {
-        inflow: toNumber(item.totalInflow)
-      };
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | GET ALL PERIODS
-    |--------------------------------------------------------------------------
-    */
-
-    const allWeeks =
-      [
-        ...Object.keys(inflowMap),
-        ...Object.keys(outflowMap)
-      ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | REMOVE DUPLICATES
-    |--------------------------------------------------------------------------
-    */
-
-    const uniqueWeeks =
-      [...new Set(allWeeks)];
-
-    /*
-    |--------------------------------------------------------------------------
-    | SORT DD/MM/YYYY
-    |--------------------------------------------------------------------------
-    */
-
-    uniqueWeeks.sort((a, b) => {
-
-      const [da, ma, ya] = a.split("/");
-      const [db, mb, yb] = b.split("/");
-
-      const dateA =
-        new Date(`${ya}-${ma}-${da}`);
-
-      const dateB =
-        new Date(`${yb}-${mb}-${db}`);
-
-      return dateA - dateB;
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | BUILD FINAL RESPONSE
-    |--------------------------------------------------------------------------
-    */
-
-    let previousForecast =
-      initialBalance;
+    let runningForecast =
+      openingBalance;
 
     const finalResult =
-      uniqueWeeks.map((week, index) => {
+      inflowData.map((inflowRow) => {
+
+        const weekStart =
+          inflowRow.weekStart;
 
         const inflow =
-          toNumber(
-            inflowMap?.[week]?.inflow
-          );
+          toNumber(inflowRow.totalInflow);
 
         const outflow =
           toNumber(
-            outflowMap?.[week]?.outflow
+            outflowMap[weekStart]?.totalOutflow
           );
 
         /*
@@ -220,31 +161,34 @@ module.exports = async (req, res) => {
         | FORECAST
         |--------------------------------------------------------------------------
         |
-        | Prev1 = Entrada1 - Salida1 + (Balance)
-        | Prev2 = Entrada2 - Salida2 + (Prev1)
-        |--------------------------------------------------------------------------
+        | Prev = Entrada - Salida + Balance/Previo
+        |
         */
 
-        const forecast =
+        runningForecast =
           inflow
           - outflow
-          + previousForecast;
-
-        previousForecast =
-          forecast;
+          + runningForecast;
 
         return {
 
-          semanaDel: week,
+          semanaDel:
+            weekStart,
 
           entradaMXN:
-            Number(inflow.toFixed(2)),
+            Number(
+              inflow.toFixed(2)
+            ),
 
           salidaMXN:
-            Number(outflow.toFixed(2)),
+            Number(
+              outflow.toFixed(2)
+            ),
 
           previsionMXN:
-            Number(forecast.toFixed(2))
+            Number(
+              runningForecast.toFixed(2)
+            )
         };
       });
 
