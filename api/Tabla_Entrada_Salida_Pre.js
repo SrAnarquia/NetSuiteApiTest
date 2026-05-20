@@ -1,391 +1,352 @@
 const axios = require("axios");
+const OAuth = require("oauth-1.0a");
+const crypto = require("crypto");
+const { Parser } = require("json2csv");
+const fs = require("fs");
 
 /*
 |--------------------------------------------------------------------------
-| URLS
+| OAUTH
 |--------------------------------------------------------------------------
 */
 
-const BALANCE_URL =
-  "https://netsuiteapitest.vercel.app/api/Balance_Apertura.js";
+const oauth = OAuth({
+  consumer: {
+    key: process.env.CONSUMER_KEY,
+    secret: process.env.CONSUMER_SECRET,
+  },
 
-const INFLOW_URL =
-  "https://netsuiteapitest.vercel.app/api/Entrada_PreV1.js";
+  signature_method: "HMAC-SHA256",
 
-const OUTFLOW_URL =
-  "https://netsuiteapitest.vercel.app/api/Salida_PreV1.js";
+  hash_function(base_string, key) {
+    return crypto
+      .createHmac("sha256", key)
+      .update(base_string)
+      .digest("base64");
+  },
+});
 
-/*
-|--------------------------------------------------------------------------
-| CACHE
-|--------------------------------------------------------------------------
-|
-| EVITA GOLPEAR NETSUITE
-| EN REFRESHES SEGUIDOS
-|
-*/
-
-let CACHE = {
-  data: null,
-  timestamp: 0
+const token = {
+  key: process.env.TOKEN_ID,
+  secret: process.env.TOKEN_SECRET,
 };
 
-const CACHE_DURATION =
-  1000 * 60 * 5; // 5 MIN
+/*
+|--------------------------------------------------------------------------
+| CONFIG
+|--------------------------------------------------------------------------
+*/
+
+const RESTLET_URL =
+  "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5127&deploy=1";
+
+const PAGE_SIZE = 1000;
 
 /*
 |--------------------------------------------------------------------------
-| HELPERS
+| SLEEP
 |--------------------------------------------------------------------------
 */
 
 const sleep = (ms) =>
   new Promise(resolve => setTimeout(resolve, ms));
 
-const randomDelay = () =>
-  Math.floor(
-    Math.random() * 3000
-  ) + 2000;
-
 /*
 |--------------------------------------------------------------------------
-| TO NUMBER
+| GET AUTH HEADER
 |--------------------------------------------------------------------------
 */
 
-const toNumber = (value) => {
+const getAuthHeader = () => {
 
-  const n = Number(value);
+  const request_data = {
+    url: RESTLET_URL,
+    method: "GET"
+  };
 
-  return isNaN(n)
-    ? 0
-    : n;
+  const oauthData =
+    oauth.authorize(
+      request_data,
+      token
+    );
+
+  return (
+    'OAuth ' +
+    `realm="${process.env.ACCOUNT_ID}",` +
+    `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
+    `oauth_token="${oauthData.oauth_token}",` +
+    `oauth_signature_method="${oauthData.oauth_signature_method}",` +
+    `oauth_timestamp="${oauthData.oauth_timestamp}",` +
+    `oauth_nonce="${oauthData.oauth_nonce}",` +
+    `oauth_version="1.0",` +
+    `oauth_signature="${encodeURIComponent(
+      oauthData.oauth_signature
+    )}"`
+  );
 };
 
 /*
 |--------------------------------------------------------------------------
-| NORMALIZE ARRAY
+| MAIN
 |--------------------------------------------------------------------------
 */
 
-const normalizeArray = (data) => {
-
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (Array.isArray(data?.data)) {
-    return data.data;
-  }
-
-  if (Array.isArray(data?.periods)) {
-    return data.periods;
-  }
-
-  return [];
-};
-
-/*
-|--------------------------------------------------------------------------
-| RETRY REQUEST
-|--------------------------------------------------------------------------
-|
-| REINTENTA SI NETSUITE
-| CORTA LA CONEXION
-|
-*/
-
-const requestWithRetry = async (
-  url,
-  params,
-  retries = 3
-) => {
-
-  for (let attempt = 1; attempt <= retries; attempt++) {
-
-    try {
-
-      return await axios.get(url, {
-        params,
-        timeout: 180000
-      });
-
-    } catch (err) {
-
-      console.log(
-        `RETRY ${attempt} => ${url}`
-      );
-
-      if (attempt === retries) {
-        throw err;
-      }
-
-      /*
-        ESPERA ANTES DE REINTENTAR
-      */
-      await sleep(
-        randomDelay()
-      );
-    }
-  }
-};
-
-/*
-|--------------------------------------------------------------------------
-| LOCK
-|--------------------------------------------------------------------------
-|
-| EVITA MULTIPLES EJECUCIONES
-| SIMULTANEAS
-|
-*/
-
-let isRunning = false;
-
-/*
-|--------------------------------------------------------------------------
-| ENDPOINT
-|--------------------------------------------------------------------------
-*/
-
-module.exports = async (req, res) => {
+(async () => {
 
   try {
 
-    /*
-    |--------------------------------------------------------------------------
-    | CACHE
-    |--------------------------------------------------------------------------
-    */
+    let pageIndex = 0;
 
-    const now = Date.now();
+    let keepGoing = true;
 
-    if (
-      CACHE.data &&
-      (now - CACHE.timestamp) < CACHE_DURATION
-    ) {
+    let allRows = [];
+
+    while (keepGoing) {
 
       console.log(
-        "RETURN CACHE"
+        `PAGE => ${pageIndex}`
       );
-
-      return res
-        .status(200)
-        .json(CACHE.data);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | LOCK
-    |--------------------------------------------------------------------------
-    */
-
-    if (isRunning) {
-
-      return res.status(429).json({
-        success: false,
-        error:
-          "Another refresh is running"
-      });
-    }
-
-    isRunning = true;
-
-    const subsidiary =
-      req.query.subsidiary || 2;
-
-    /*
-    |--------------------------------------------------------------------------
-    | 1. BALANCE
-    |--------------------------------------------------------------------------
-    */
-
-    const balanceResponse =
-      await requestWithRetry(
-        BALANCE_URL,
-        { subsidiary }
-      );
-
-    await sleep(
-      randomDelay()
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | 2. INFLOW
-    |--------------------------------------------------------------------------
-    */
-
-    const inflowResponse =
-      await requestWithRetry(
-        INFLOW_URL,
-        { subsidiary }
-      );
-
-    await sleep(
-      randomDelay()
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | 3. OUTFLOW
-    |--------------------------------------------------------------------------
-    */
-
-    const outflowResponse =
-      await requestWithRetry(
-        OUTFLOW_URL,
-        { subsidiary }
-      );
-
-    /*
-    |--------------------------------------------------------------------------
-    | NORMALIZE
-    |--------------------------------------------------------------------------
-    */
-
-    const balanceData =
-      normalizeArray(balanceResponse.data);
-
-    const inflowData =
-      normalizeArray(inflowResponse.data);
-
-    const outflowData =
-      normalizeArray(outflowResponse.data);
-
-    /*
-    |--------------------------------------------------------------------------
-    | BALANCE
-    |--------------------------------------------------------------------------
-    */
-
-    const openingBalance =
-      toNumber(
-        balanceData?.[0]?.total
-      );
-
-    /*
-    |--------------------------------------------------------------------------
-    | MAP OUTFLOW
-    |--------------------------------------------------------------------------
-    */
-
-    const outflowMap = {};
-
-    for (const row of outflowData) {
-
-      outflowMap[
-        row.weekStart
-      ] = row;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | FORECAST
-    |--------------------------------------------------------------------------
-    */
-
-    let previousForecast = 0;
-
-    const finalResult = [];
-
-    for (let i = 0; i < inflowData.length; i++) {
-
-      const inflowRow =
-        inflowData[i];
-
-      const weekStart =
-        inflowRow.weekStart;
-
-      const inflow =
-        toNumber(
-          inflowRow.totalInflow
-        );
-
-      const outflow =
-        toNumber(
-          outflowMap[weekStart]
-            ?.totalOutflow
-        );
-
-      let currentForecast = 0;
 
       /*
-        PREV1
+      |--------------------------------------------------------------------------
+      | PARAMS
+      |--------------------------------------------------------------------------
       */
-      if (i === 0) {
 
-        currentForecast =
-          inflow
-          - outflow
-          + openingBalance;
+      const params = {
+
+        requestType:
+          "ARAP_DRILLDOWN",
+
+        pageSize:
+          PAGE_SIZE,
+
+        pageIndex,
+
+        type:
+          "ap",
+
+        filters: JSON.stringify({
+
+          startDate:
+            null,
+
+          endDate:
+            "24/05/2026",
+
+          period:
+            "18/05/2026",
+
+          subsidiary: {
+
+            id:
+              2,
+
+            isConsolidated:
+              false,
+
+            subsidiaryList:
+              [1,6,7,4,5,2,3]
+          }
+        }),
+
+        precision:
+          2,
+
+        forecastBy:
+          2,
+
+        periodDate:
+          "18/05/2026",
+
+        year:
+          2026,
+
+        date:
+          ""
+      };
+
+      /*
+      |--------------------------------------------------------------------------
+      | REQUEST
+      |--------------------------------------------------------------------------
+      */
+
+      const response =
+        await axios.get(
+          RESTLET_URL,
+          {
+            params,
+
+            timeout:
+              300000,
+
+            headers: {
+              Authorization:
+                getAuthHeader()
+            }
+          }
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | BODY
+      |--------------------------------------------------------------------------
+      */
+
+      const result =
+        response.data;
+
+      console.log(
+        "RAW RESPONSE:"
+      );
+
+      console.log(result);
+
+      /*
+      |--------------------------------------------------------------------------
+      | AJUSTAR SEGUN RESPONSE REAL
+      |--------------------------------------------------------------------------
+      */
+
+      let rows = [];
+
+      /*
+        SI EL RESTLET
+        REGRESA:
+        {
+          body: "...."
+        }
+      */
+
+      if (result?.body) {
+
+        try {
+
+          const parsed =
+            JSON.parse(
+              result.body
+            );
+
+          rows =
+            parsed.data ||
+            parsed.rows ||
+            parsed.results ||
+            [];
+
+        } catch (e) {
+
+          console.log(
+            "NO JSON BODY"
+          );
+
+          rows = [];
+        }
 
       } else {
 
-        /*
-          PREVN
-        */
-        currentForecast =
-          inflow
-          - outflow
-          + previousForecast;
+        rows =
+          result.data ||
+          result.rows ||
+          result.results ||
+          [];
       }
 
-      previousForecast =
-        currentForecast;
+      /*
+      |--------------------------------------------------------------------------
+      | LOG
+      |--------------------------------------------------------------------------
+      */
 
-      finalResult.push({
+      console.log(
+        `ROWS => ${rows.length}`
+      );
 
-        semanaDel:
-          weekStart,
+      /*
+      |--------------------------------------------------------------------------
+      | FIN
+      |--------------------------------------------------------------------------
+      */
 
-        entradaMXN:
-          Number(
-            inflow.toFixed(2)
-          ),
+      if (!rows.length) {
 
-        salidaMXN:
-          Number(
-            outflow.toFixed(2)
-          ),
+        keepGoing = false;
 
-        previsionMXN:
-          Number(
-            currentForecast.toFixed(2)
-          )
-      });
+        break;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | ACUMULAR
+      |--------------------------------------------------------------------------
+      */
+
+      allRows.push(
+        ...rows
+      );
+
+      /*
+      |--------------------------------------------------------------------------
+      | NEXT PAGE
+      |--------------------------------------------------------------------------
+      */
+
+      pageIndex++;
+
+      /*
+      |--------------------------------------------------------------------------
+      | DELAY
+      |--------------------------------------------------------------------------
+      */
+
+      await sleep(1500);
     }
 
     /*
     |--------------------------------------------------------------------------
-    | SAVE CACHE
+    | TOTAL
     |--------------------------------------------------------------------------
     */
 
-    CACHE = {
-      data: finalResult,
-      timestamp: Date.now()
-    };
+    console.log(
+      `TOTAL ROWS => ${allRows.length}`
+    );
 
-    isRunning = false;
+    /*
+    |--------------------------------------------------------------------------
+    | CSV
+    |--------------------------------------------------------------------------
+    */
 
-    return res
-      .status(200)
-      .json(finalResult);
+    const parser =
+      new Parser();
+
+    const csv =
+      parser.parse(
+        allRows
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | SAVE FILE
+    |--------------------------------------------------------------------------
+    */
+
+    fs.writeFileSync(
+      "cash360.csv",
+      csv
+    );
+
+    console.log(
+      "CSV GENERATED"
+    );
 
   } catch (err) {
 
-    isRunning = false;
-
-    console.error(err);
-
-    return res.status(500).json({
-
-      success: false,
-
-      error:
-        err.response?.data ||
-        err.message
-    });
+    console.error(
+      err.response?.data ||
+      err.message
+    );
   }
-};
+
+})();
