@@ -2,7 +2,7 @@ const axios = require("axios");
 
 /*
 |--------------------------------------------------------------------------
-| CONFIG
+| URLS
 |--------------------------------------------------------------------------
 */
 
@@ -17,18 +17,12 @@ const OUTFLOW_URL =
 
 /*
 |--------------------------------------------------------------------------
-| DELAY CONTROL
+| HELPERS
 |--------------------------------------------------------------------------
 */
 
 const sleep = (ms) =>
   new Promise(resolve => setTimeout(resolve, ms));
-
-/*
-|--------------------------------------------------------------------------
-| SAFE NUMBER
-|--------------------------------------------------------------------------
-*/
 
 const toNumber = (value) => {
 
@@ -37,6 +31,38 @@ const toNumber = (value) => {
   return isNaN(n)
     ? 0
     : n;
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET ARRAY SAFELY
+|--------------------------------------------------------------------------
+*/
+
+const normalizeArray = (data) => {
+
+  /*
+    Si ya es array
+  */
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  /*
+    Si viene dentro de data
+  */
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  /*
+    Si viene dentro de periods
+  */
+  if (Array.isArray(data?.periods)) {
+    return data.periods;
+  }
+
+  return [];
 };
 
 /*
@@ -56,19 +82,15 @@ module.exports = async (req, res) => {
     |--------------------------------------------------------------------------
     | 1. BALANCE
     |--------------------------------------------------------------------------
-    |
-    | NO HACER TODO EN PARALELO
-    | NETSUITE SE SATURA
-    |
     */
 
     const balanceResponse =
       await axios.get(BALANCE_URL, {
         params: { subsidiary },
-        timeout: 120000
+        timeout: 180000
       });
 
-    await sleep(1500);
+    await sleep(2000);
 
     /*
     |--------------------------------------------------------------------------
@@ -79,10 +101,10 @@ module.exports = async (req, res) => {
     const inflowResponse =
       await axios.get(INFLOW_URL, {
         params: { subsidiary },
-        timeout: 120000
+        timeout: 180000
       });
 
-    await sleep(1500);
+    await sleep(2000);
 
     /*
     |--------------------------------------------------------------------------
@@ -93,23 +115,33 @@ module.exports = async (req, res) => {
     const outflowResponse =
       await axios.get(OUTFLOW_URL, {
         params: { subsidiary },
-        timeout: 120000
+        timeout: 180000
       });
 
     /*
     |--------------------------------------------------------------------------
-    | DATA EXTRACTION
+    | NORMALIZE DATA
     |--------------------------------------------------------------------------
     */
 
     const balanceData =
-      balanceResponse.data || [];
+      normalizeArray(balanceResponse.data);
 
     const inflowData =
-      inflowResponse.data || [];
+      normalizeArray(inflowResponse.data);
 
     const outflowData =
-      outflowResponse.data || [];
+      normalizeArray(outflowResponse.data);
+
+    /*
+    |--------------------------------------------------------------------------
+    | DEBUG
+    |--------------------------------------------------------------------------
+    */
+
+    console.log("BALANCE:", balanceData);
+    console.log("INFLOW:", inflowData);
+    console.log("OUTFLOW:", outflowData);
 
     /*
     |--------------------------------------------------------------------------
@@ -135,62 +167,54 @@ module.exports = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | BUILD FINAL RESULT
+    | FINAL RESULT
     |--------------------------------------------------------------------------
     */
 
     let runningForecast =
       openingBalance;
 
-    const finalResult =
-      inflowData.map((inflowRow) => {
+    const finalResult = [];
 
-        const weekStart =
-          inflowRow.weekStart;
+    for (const inflowRow of inflowData) {
 
-        const inflow =
-          toNumber(inflowRow.totalInflow);
+      const weekStart =
+        inflowRow.weekStart;
 
-        const outflow =
-          toNumber(
-            outflowMap[weekStart]?.totalOutflow
-          );
+      const inflow =
+        toNumber(inflowRow.totalInflow);
 
-        /*
-        |--------------------------------------------------------------------------
-        | FORECAST
-        |--------------------------------------------------------------------------
-        |
-        | Prev = Entrada - Salida + Balance/Previo
-        |
-        */
+      const outflow =
+        toNumber(
+          outflowMap[weekStart]?.totalOutflow
+        );
 
-        runningForecast =
-          inflow
-          - outflow
-          + runningForecast;
+      /*
+      |--------------------------------------------------------------------------
+      | FORECAST
+      |--------------------------------------------------------------------------
+      */
 
-        return {
+      runningForecast =
+        inflow
+        - outflow
+        + runningForecast;
 
-          semanaDel:
-            weekStart,
+      finalResult.push({
 
-          entradaMXN:
-            Number(
-              inflow.toFixed(2)
-            ),
+        semanaDel:
+          weekStart,
 
-          salidaMXN:
-            Number(
-              outflow.toFixed(2)
-            ),
+        entradaMXN:
+          Number(inflow.toFixed(2)),
 
-          previsionMXN:
-            Number(
-              runningForecast.toFixed(2)
-            )
-        };
+        salidaMXN:
+          Number(outflow.toFixed(2)),
+
+        previsionMXN:
+          Number(runningForecast.toFixed(2))
       });
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -198,7 +222,9 @@ module.exports = async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    return res.status(200).json(finalResult);
+    return res.status(200).json(
+      finalResult
+    );
 
   } catch (err) {
 
