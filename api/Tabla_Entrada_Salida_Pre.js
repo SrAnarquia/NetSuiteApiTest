@@ -1,145 +1,123 @@
 export default async function handler(req, res) {
+  try {
 
-    try {
+    /*
+    ==========================================
+    ENDPOINTS
+    ==========================================
+    */
 
-        /* =========================================
-           ENDPOINTS
-        ========================================= */
+    const BALANCE_URL =
+      'https://netsuiteapitest.vercel.app/api/Balance_Apertura.js';
 
-        const BALANCE_URL =
-            'https://netsuiteapitest.vercel.app/api/Balance_Apertura.js';
+    const ENTRADA_URL =
+      'https://netsuiteapitest.vercel.app/api/Entrada_Pre.js';
 
-        const ENTRADA_URL =
-            'https://netsuiteapitest.vercel.app/api/Entrada_Pre.js';
+    const SALIDA_URL =
+      'https://netsuiteapitest.vercel.app/api/Salida_Pre.js';
 
-        const SALIDA_URL =
-            'https://netsuiteapitest.vercel.app/api/Salida_Pre.js';
+    /*
+    ==========================================
+    FETCH
+    ==========================================
+    */
 
+    const [
+      balanceResponse,
+      entradaResponse,
+      salidaResponse
+    ] = await Promise.all([
+      fetch(BALANCE_URL),
+      fetch(ENTRADA_URL),
+      fetch(SALIDA_URL)
+    ]);
 
-        /* =========================================
-           FETCH
-        ========================================= */
+    const balanceData = await balanceResponse.json();
+    const entradaData = await entradaResponse.json();
+    const salidaData = await salidaResponse.json();
 
-        const [
-            balanceResponse,
-            entradaResponse,
-            salidaResponse
-        ] = await Promise.all([
+    /*
+    ==========================================
+    BALANCE APERTURA
+    ==========================================
+    */
 
-            fetch(BALANCE_URL),
-            fetch(ENTRADA_URL),
-            fetch(SALIDA_URL)
+    // viene negativo en tu endpoint
+    // lo convertimos positivo
+    const balanceApertura =
+      Math.abs(Number(balanceData?.[0]?.total || 0));
 
-        ]);
+    /*
+    ==========================================
+    ARMAR TABLA
+    ==========================================
+    */
 
+    const resultado = [];
 
-        /* =========================================
-           JSON
-        ========================================= */
+    let previsionAnterior = balanceApertura;
 
-        const balanceData =
-            await balanceResponse.json();
+    for (let i = 0; i < entradaData.length; i++) {
 
-        const entradaData =
-            await entradaResponse.json();
+      const entradaSemana = entradaData[i];
+      const salidaSemana = salidaData[i];
 
-        const salidaData =
-            await salidaResponse.json();
+      const entrada =
+        Number(entradaSemana.totalInflow || 0);
 
+      const salida =
+        Number(salidaSemana.totalOutflow || 0);
 
-        /* =========================================
-           BALANCE INICIAL
-        ========================================= */
+      /*
+      ==========================================
+      PREVISION
+      ==========================================
 
-        let previousForecast =
-            Number(balanceData[0]?.total || 0);
+      Semana 1:
+      (Entrada - Salida) + Balance Apertura
 
+      Semana 2:
+      (Entrada - Salida) + Prev1
 
-        /* =========================================
-           MAP SALIDAS
-        ========================================= */
+      etc...
+      ==========================================
+      */
 
-        const salidaMap = {};
+      const prevision =
+        (entrada - salida) + previsionAnterior;
 
-        salidaData.forEach(item => {
+      resultado.push({
+        semanaDel: entradaSemana.period,
 
-            salidaMap[item.weekStart] = item;
+        entradaMXN: Number(
+          entrada.toFixed(2)
+        ),
 
-        });
+        salidaMXN: Number(
+          salida.toFixed(2)
+        ),
 
+        previsionMXN: Number(
+          prevision.toFixed(2)
+        )
+      });
 
-        /* =========================================
-           FORMATO POWER BI
-        ========================================= */
-
-        const result = entradaData.map(entrada => {
-
-            const weekStart =
-                entrada.weekStart;
-
-            const inflow =
-                Number(entrada.totalInflow || 0);
-
-            const outflow =
-                Number(
-                    salidaMap[weekStart]?.totalOutflow || 0
-                );
-
-            /* =====================================
-               PREVISION ACUMULADA
-            ===================================== */
-
-            const forecast =
-                previousForecast
-                + inflow
-                - outflow;
-
-            previousForecast = forecast;
-
-
-            /* =====================================
-               FORMATO TABLA FINAL
-            ===================================== */
-
-            return {
-
-                "SEMANA DEL":
-                    weekStart,
-
-                "ENTRADA (MXN)":
-                    Number(
-                        inflow.toFixed(2)
-                    ),
-
-                "SALIDA (MXN)":
-                    Number(
-                        outflow.toFixed(2)
-                    ),
-
-                "PREVISIÓN (MXN)":
-                    Number(
-                        forecast.toFixed(2)
-                    )
-
-            };
-
-        });
-
-
-        /* =========================================
-           RESPONSE DIRECTO
-        ========================================= */
-
-        return res.status(200).json(result);
-
-    } catch (error) {
-
-        return res.status(500).json({
-
-            error: error.message
-
-        });
-
+      previsionAnterior = prevision;
     }
 
+    /*
+    ==========================================
+    RESPUESTA LIMPIA
+    ==========================================
+    */
+
+    res.status(200).json(resultado);
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+
+  }
 }
