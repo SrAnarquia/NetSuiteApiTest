@@ -1,41 +1,5 @@
-const delay = (ms) =>
-  new Promise(resolve =>
-    setTimeout(resolve, ms)
-  );
-
-/*
-==========================================
-CACHE GLOBAL
-==========================================
-*/
-
-let cache = null;
-let cacheTimestamp = 0;
-
-// 5 minutos
-const CACHE_DURATION = 5 * 60 * 1000;
-
 export default async function handler(req, res) {
-
   try {
-
-    /*
-    ==========================================
-    VALIDAR CACHE
-    ==========================================
-    */
-
-    const now = Date.now();
-
-    if (
-      cache &&
-      (now - cacheTimestamp) < CACHE_DURATION
-    ) {
-
-      console.log('RESPONDIENDO DESDE CACHE');
-
-      return res.status(200).json(cache);
-    }
 
     /*
     ==========================================
@@ -54,64 +18,23 @@ export default async function handler(req, res) {
 
     /*
     ==========================================
-    FETCH SECUENCIAL
+    FETCH
     ==========================================
     */
 
-    console.log('CONSULTANDO BALANCE');
+    const [
+      balanceResponse,
+      entradaResponse,
+      salidaResponse
+    ] = await Promise.all([
+      fetch(BALANCE_URL),
+      fetch(ENTRADA_URL),
+      fetch(SALIDA_URL)
+    ]);
 
-    const balanceResponse =
-      await fetch(BALANCE_URL);
-
-    if (!balanceResponse.ok) {
-
-      throw new Error(
-        `Error Balance: ${balanceResponse.status}`
-      );
-    }
-
-    await delay(10000);
-
-    console.log('CONSULTANDO ENTRADAS');
-
-    const entradaResponse =
-      await fetch(ENTRADA_URL);
-
-    if (!entradaResponse.ok) {
-
-      throw new Error(
-        `Error Entrada: ${entradaResponse.status}`
-      );
-    }
-
-    await delay(10000);
-
-    console.log('CONSULTANDO SALIDAS');
-
-    const salidaResponse =
-      await fetch(SALIDA_URL);
-
-    if (!salidaResponse.ok) {
-
-      throw new Error(
-        `Error Salida: ${salidaResponse.status}`
-      );
-    }
-
-    /*
-    ==========================================
-    JSON
-    ==========================================
-    */
-
-    const balanceData =
-      await balanceResponse.json();
-
-    const entradaData =
-      await entradaResponse.json();
-
-    const salidaData =
-      await salidaResponse.json();
+    const balanceData = await balanceResponse.json();
+    const entradaData = await entradaResponse.json();
+    const salidaData = await salidaResponse.json();
 
     /*
     ==========================================
@@ -119,6 +42,7 @@ export default async function handler(req, res) {
     ==========================================
     */
 
+    // VIENE NEGATIVO Y ASI SE NECESITA
     const balanceApertura =
       Number(balanceData?.[0]?.total || 0);
 
@@ -134,11 +58,8 @@ export default async function handler(req, res) {
 
     for (let i = 0; i < entradaData.length; i++) {
 
-      const entradaSemana =
-        entradaData[i] || {};
-
-      const salidaSemana =
-        salidaData[i] || {};
+      const entradaSemana = entradaData[i];
+      const salidaSemana = salidaData[i];
 
       /*
       ==========================================
@@ -147,15 +68,10 @@ export default async function handler(req, res) {
       */
 
       const semanaDel =
-
         entradaSemana.period ||
-
         entradaSemana.weekStart ||
-
         salidaSemana.period ||
-
         salidaSemana.weekStart ||
-
         null;
 
       /*
@@ -164,14 +80,12 @@ export default async function handler(req, res) {
       ==========================================
       */
 
-      const entrada = Number(
-
-        entradaSemana.total_inflow ??
-
-        entradaSemana.totalInflow ??
-
-        0
-      );
+      const entrada =
+        Number(
+          entradaSemana.total_inflow ??
+          entradaSemana.totalInflow ??
+          0
+        );
 
       /*
       ==========================================
@@ -179,14 +93,12 @@ export default async function handler(req, res) {
       ==========================================
       */
 
-      const salida = Number(
-
-        salidaSemana.total_outflow ??
-
-        salidaSemana.totalOutflow ??
-
-        0
-      );
+      const salida =
+        Number(
+          salidaSemana.total_outflow ??
+          salidaSemana.totalOutflow ??
+          0
+        );
 
       /*
       ==========================================
@@ -200,7 +112,6 @@ export default async function handler(req, res) {
       if (i === 0) {
 
         prevision =
-
           entrada
           - salida
           + balanceApertura;
@@ -209,7 +120,6 @@ export default async function handler(req, res) {
 
         // SEMANAS SIGUIENTES
         prevision =
-
           entrada
           - salida
           + previsionAnterior;
@@ -250,16 +160,7 @@ export default async function handler(req, res) {
 
     /*
     ==========================================
-    GUARDAR CACHE
-    ==========================================
-    */
-
-    cache = resultado;
-    cacheTimestamp = Date.now();
-
-    /*
-    ==========================================
-    RESPUESTA FINAL
+    RESPUESTA FINAL LIMPIA
     ==========================================
     */
 
@@ -267,14 +168,9 @@ export default async function handler(req, res) {
 
   } catch (error) {
 
-    console.error(error);
-
     return res.status(500).json({
-
-      success: false,
-
-      error: error.message || 'Error interno'
-
+      error: error.message
     });
+
   }
 }
