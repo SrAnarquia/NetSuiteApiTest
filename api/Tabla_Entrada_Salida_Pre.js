@@ -11,10 +11,10 @@ export default async function handler(req, res) {
       'https://netsuiteapitest.vercel.app/api/Balance_Apertura.js';
 
     const ENTRADA_URL =
-      'https://netsuiteapitest.vercel.app/api/Entrada_Pre.js';
+      'https://netsuiteapitest.vercel.app/api/EntradaV1_Pre.js';
 
     const SALIDA_URL =
-      'https://netsuiteapitest.vercel.app/api/Salida_Pre.js';
+      'https://netsuiteapitest.vercel.app/api/SalidaV1_Pre.js';
 
     /*
     ==========================================
