@@ -33,6 +33,10 @@ module.exports = async (req, res) => {
 
     while (true) {
 
+      console.log(
+        `PAGE ${pageIndex}`
+      );
+
       /*
         PAYLOAD
       */
@@ -68,18 +72,19 @@ module.exports = async (req, res) => {
       };
 
       /*
-        URL
+        URL RESTLET
       */
       const url =
         "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5127&deploy=1";
 
       /*
         OAUTH
+        IMPORTANTE:
+        NO incluir data: payload
       */
       const request_data = {
         url,
-        method: "POST",
-        data: payload
+        method: "POST"
       };
 
       const oauthData =
@@ -89,20 +94,23 @@ module.exports = async (req, res) => {
         );
 
       /*
-        HEADER
+        HEADERS
       */
-      const authHeader =
-        'OAuth ' +
-        `realm="${process.env.ACCOUNT_ID}",` +
-        `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
-        `oauth_token="${oauthData.oauth_token}",` +
-        `oauth_signature_method="${oauthData.oauth_signature_method}",` +
-        `oauth_timestamp="${oauthData.oauth_timestamp}",` +
-        `oauth_nonce="${oauthData.oauth_nonce}",` +
-        `oauth_version="1.0",` +
-        `oauth_signature="${encodeURIComponent(
-          oauthData.oauth_signature
-        )}"`;
+      const headers = {
+
+        ...oauth.toHeader(
+          oauthData
+        ),
+
+        realm:
+          process.env.ACCOUNT_ID,
+
+        "Content-Type":
+          "application/json",
+
+        Accept:
+          "application/json"
+      };
 
       /*
         REQUEST
@@ -112,18 +120,17 @@ module.exports = async (req, res) => {
           url,
           payload,
           {
-            headers: {
-              Authorization:
-                authHeader,
-
-              "Content-Type":
-                "application/json",
-
-              Accept:
-                "application/json"
-            }
+            headers
           }
         );
+
+      /*
+        DEBUG
+      */
+      console.log(
+        "STATUS:",
+        response.status
+      );
 
       /*
         DETECTAR ROWS
@@ -136,17 +143,16 @@ module.exports = async (req, res) => {
         [];
 
       console.log(
-        `PAGE ${pageIndex}`
-      );
-
-      console.log(
         `ROWS ${rows.length}`
       );
 
+      /*
+        ACUMULAR
+      */
       allRows.push(...rows);
 
       /*
-        FIN
+        SI YA NO HAY MÁS
       */
       if (
         rows.length < 1000
@@ -155,13 +161,22 @@ module.exports = async (req, res) => {
         break;
       }
 
+      /*
+        SIGUIENTE PÁGINA
+      */
       pageIndex++;
     }
 
+    /*
+      FINAL
+    */
     return res.status(200).json({
+
       success: true,
+
       totalRows:
         allRows.length,
+
       data:
         allRows
     });
@@ -174,6 +189,7 @@ module.exports = async (req, res) => {
     );
 
     return res.status(500).json({
+
       success: false,
 
       error:
