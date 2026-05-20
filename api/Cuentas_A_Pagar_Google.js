@@ -27,165 +27,131 @@ module.exports = async (req, res) => {
 
   try {
 
-    let pageIndex = 0;
+    /*
+    |--------------------------------------------------------------------------
+    | RESTLET
+    |--------------------------------------------------------------------------
+    */
 
-    let allRows = [];
-
-    while (true) {
-
-      console.log(
-        `PAGE ${pageIndex}`
-      );
-
-      /*
-        PAYLOAD
-      */
-      const payload = {
-        requestType:
-          "ARAP_DRILLDOWN",
-
-        pageSize: 1000,
-
-        pageIndex,
-
-        type: "ap",
-
-        filters: {
-          startDate: null,
-
-          endDate:
-            "24/05/2026",
-
-          subsidiary: {
-            id: 2,
-
-            isConsolidated: false,
-
-            subsidiaryList:
-              [1,6,7,4,5,2,3]
-          }
-        },
-
-        precision: 2,
-
-        date: null
-      };
-
-      /*
-        URL
-      */
-      const url =
-        "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5127&deploy=1";
-
-      /*
-        REQUEST DATA
-      */
-      const request_data = {
-        url,
-        method: "POST"
-      };
-
-      /*
-        SIGNATURE
-      */
-      const oauthData =
-        oauth.authorize(
-          request_data,
-          token
-        );
-
-      /*
-        AUTH HEADER
-      */
-      const authHeader =
-        'OAuth ' +
-        `realm="${process.env.ACCOUNT_ID}",` +
-        `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
-        `oauth_token="${oauthData.oauth_token}",` +
-        `oauth_signature_method="${oauthData.oauth_signature_method}",` +
-        `oauth_timestamp="${oauthData.oauth_timestamp}",` +
-        `oauth_nonce="${oauthData.oauth_nonce}",` +
-        `oauth_version="1.0",` +
-        `oauth_signature="${encodeURIComponent(
-          oauthData.oauth_signature
-        )}"`;
-
-      /*
-        REQUEST
-      */
-      const response =
-        await axios.post(
-          url,
-          payload,
-          {
-            timeout: 180000,
-
-            headers: {
-              Authorization:
-                authHeader,
-
-              "Content-Type":
-                "application/json",
-
-              Accept:
-                "application/json"
-            }
-          }
-        );
-
-      /*
-        DEBUG
-      */
-      console.log(
-        "STATUS:",
-        response.status
-      );
-
-      /*
-        DETECT ROWS
-      */
-      const rows =
-        response.data.data ||
-        response.data.rows ||
-        response.data.results ||
-        response.data.items ||
-        [];
-
-      console.log(
-        `ROWS ${rows.length}`
-      );
-
-      /*
-        ADD
-      */
-      allRows.push(...rows);
-
-      /*
-        FINISH
-      */
-      if (
-        rows.length < 1000
-      ) {
-
-        break;
-      }
-
-      pageIndex++;
-    }
+    const url =
+      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5127&deploy=1";
 
     /*
-      SUCCESS
+    |--------------------------------------------------------------------------
+    | PAYLOAD CSV
+    |--------------------------------------------------------------------------
     */
-    return res.status(200).json({
 
-      success: true,
+    const payload = {
 
-      totalRows:
-        allRows.length,
+      requestType:
+        "ARAP_DRILLDOWN_CSV",
 
-      data:
-        allRows
-    });
+      pageSize: 1000,
+
+      pageIndex: 0,
+
+      type: "ap",
+
+      filters: {
+        startDate: null,
+
+        endDate:
+          "24/05/2026",
+
+        period:
+          "18/05/2026",
+
+        subsidiary: {
+          id: 2,
+
+          isConsolidated: false,
+
+          subsidiaryList:
+            [1,6,7,4,5,2,3]
+        }
+      },
+
+      precision: 2,
+
+      columnHeaders:
+        "\"Subsidiaria\",\"Número de transacción\",\"Número de referencia\",\"Tipo de transacción\",\"Entidad\",\"Fecha de transacción\",\"Fecha de vencimiento\",\"Importe adeudado (MXN)\",\"Importe de transacción (MXN)\",\"Estado\",\"Fecha de cierre\",\"Importe en moneda extranjera\",\"Moneda de transacción\"",
+
+      forecastBy: 2,
+
+      periodDate:
+        "18/05/2026",
+
+      year: 2026,
+
+      date: ""
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | OAUTH
+    |--------------------------------------------------------------------------
+    */
+
+    const request_data = {
+      url,
+      method: "POST"
+    };
+
+    const oauthData =
+      oauth.authorize(
+        request_data,
+        token
+      );
+
+    const authHeader =
+      'OAuth ' +
+      `realm="${process.env.ACCOUNT_ID}",` +
+      `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
+      `oauth_token="${oauthData.oauth_token}",` +
+      `oauth_signature_method="${oauthData.oauth_signature_method}",` +
+      `oauth_timestamp="${oauthData.oauth_timestamp}",` +
+      `oauth_nonce="${oauthData.oauth_nonce}",` +
+      `oauth_version="1.0",` +
+      `oauth_signature="${encodeURIComponent(
+        oauthData.oauth_signature
+      )}"`;
+
+    /*
+    |--------------------------------------------------------------------------
+    | REQUEST
+    |--------------------------------------------------------------------------
+    */
+
+    const response =
+      await axios.post(
+        url,
+        payload,
+        {
+          timeout: 300000,
+
+          headers: {
+            Authorization:
+              authHeader,
+
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json"
+          }
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | RETURN DIRECTO
+    |--------------------------------------------------------------------------
+    */
+
+    return res
+      .status(200)
+      .json(response.data);
 
   } catch (err) {
 
