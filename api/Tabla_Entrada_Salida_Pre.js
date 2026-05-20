@@ -35,28 +35,28 @@ const toNumber = (value) => {
 
 /*
 |--------------------------------------------------------------------------
-| GET ARRAY SAFELY
+| NORMALIZE ARRAY
 |--------------------------------------------------------------------------
 */
 
 const normalizeArray = (data) => {
 
   /*
-    Si ya es array
+    DIRECT ARRAY
   */
   if (Array.isArray(data)) {
     return data;
   }
 
   /*
-    Si viene dentro de data
+    ARRAY INSIDE data
   */
   if (Array.isArray(data?.data)) {
     return data.data;
   }
 
   /*
-    Si viene dentro de periods
+    ARRAY INSIDE periods
   */
   if (Array.isArray(data?.periods)) {
     return data.periods;
@@ -169,14 +169,26 @@ module.exports = async (req, res) => {
     |--------------------------------------------------------------------------
     | FINAL RESULT
     |--------------------------------------------------------------------------
+    |
+    | Prev1 =
+    | Inflow1 - Outflow1 + OpeningBalance
+    |
+    | Prev2 =
+    | Inflow2 - Outflow2 + Prev1
+    |
+    | Prev3 =
+    | Inflow3 - Outflow3 + Prev2
+    |
     */
 
-    let runningForecast =
-      openingBalance;
+    let previousForecast = 0;
 
     const finalResult = [];
 
-    for (const inflowRow of inflowData) {
+    for (let i = 0; i < inflowData.length; i++) {
+
+      const inflowRow =
+        inflowData[i];
 
       const weekStart =
         inflowRow.weekStart;
@@ -191,14 +203,50 @@ module.exports = async (req, res) => {
 
       /*
       |--------------------------------------------------------------------------
-      | FORECAST
+      | CURRENT FORECAST
       |--------------------------------------------------------------------------
       */
 
-      runningForecast =
-        inflow
-        - outflow
-        + runningForecast;
+      let currentForecast = 0;
+
+      /*
+        PREV1 =
+        ENTRADA1 - SALIDA1 + BALANCE
+      */
+      if (i === 0) {
+
+        currentForecast =
+          inflow
+          - outflow
+          + openingBalance;
+
+      } else {
+
+        /*
+          PREVN =
+          ENTRADAN - SALIDAN + PREVIO
+        */
+
+        currentForecast =
+          inflow
+          - outflow
+          + previousForecast;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | SAVE PREVIOUS
+      |--------------------------------------------------------------------------
+      */
+
+      previousForecast =
+        currentForecast;
+
+      /*
+      |--------------------------------------------------------------------------
+      | PUSH RESULT
+      |--------------------------------------------------------------------------
+      */
 
       finalResult.push({
 
@@ -206,13 +254,19 @@ module.exports = async (req, res) => {
           weekStart,
 
         entradaMXN:
-          Number(inflow.toFixed(2)),
+          Number(
+            inflow.toFixed(2)
+          ),
 
         salidaMXN:
-          Number(outflow.toFixed(2)),
+          Number(
+            outflow.toFixed(2)
+          ),
 
         previsionMXN:
-          Number(runningForecast.toFixed(2))
+          Number(
+            currentForecast.toFixed(2)
+          )
       });
     }
 
