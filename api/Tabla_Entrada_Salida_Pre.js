@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
 
         /* =========================================
-           FETCH PARALLEL
+           FETCH
         ========================================= */
 
         const [
@@ -48,76 +48,58 @@ export default async function handler(req, res) {
 
 
         /* =========================================
-           BALANCE APERTURA
+           BALANCE INICIAL
         ========================================= */
 
-        let openingBalance = 0;
-
-        if (
-            Array.isArray(balanceData)
-            && balanceData.length > 0
-        ) {
-
-            openingBalance =
-                Number(balanceData[0].total || 0);
-
-        }
+        let previousForecast =
+            Number(balanceData[0]?.total || 0);
 
 
         /* =========================================
-           MAPEAR SALIDAS
+           MAP SALIDAS
         ========================================= */
 
         const salidaMap = {};
 
         salidaData.forEach(item => {
 
-            salidaMap[item.weekStart] = {
-
-                totalOutflow:
-                    Number(item.totalOutflow || 0)
-
-            };
+            salidaMap[item.weekStart] = item;
 
         });
 
 
         /* =========================================
-           PREVISION
+           FORMATO POWER BI
         ========================================= */
 
-        let previousForecast = openingBalance;
-
-        const table = entradaData.map((entrada, index) => {
+        const result = entradaData.map(entrada => {
 
             const weekStart =
                 entrada.weekStart;
 
-            const totalInflow =
+            const inflow =
                 Number(entrada.totalInflow || 0);
 
-            const totalOutflow =
+            const outflow =
                 Number(
                     salidaMap[weekStart]?.totalOutflow || 0
                 );
 
             /* =====================================
-               FORMULA REAL
-
-               PREV =
-               ENTRADA
-               - SALIDA
-               + PREVISION ANTERIOR
+               PREVISION ACUMULADA
             ===================================== */
 
-            const currentForecast =
-                totalInflow
-                - totalOutflow
-                + previousForecast;
+            const forecast =
+                previousForecast
+                + inflow
+                - outflow;
 
-            /* guardar para siguiente semana */
-            previousForecast = currentForecast;
+            previousForecast = forecast;
 
+
+            /* =====================================
+               FORMATO TABLA FINAL
+            ===================================== */
 
             return {
 
@@ -126,17 +108,17 @@ export default async function handler(req, res) {
 
                 "ENTRADA (MXN)":
                     Number(
-                        totalInflow.toFixed(2)
+                        inflow.toFixed(2)
                     ),
 
                 "SALIDA (MXN)":
                     Number(
-                        totalOutflow.toFixed(2)
+                        outflow.toFixed(2)
                     ),
 
                 "PREVISIÓN (MXN)":
                     Number(
-                        currentForecast.toFixed(2)
+                        forecast.toFixed(2)
                     )
 
             };
@@ -145,25 +127,15 @@ export default async function handler(req, res) {
 
 
         /* =========================================
-           RESPONSE
+           RESPONSE DIRECTO
         ========================================= */
 
-        return res.status(200).json({
-
-            success: true,
-
-            openingBalance:
-                Number(openingBalance.toFixed(2)),
-
-            data: table
-
-        });
+        return res.status(200).json(result);
 
     } catch (error) {
 
         return res.status(500).json({
 
-            success: false,
             error: error.message
 
         });
