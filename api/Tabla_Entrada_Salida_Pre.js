@@ -1,4 +1,5 @@
 export default async function handler(req, res) {
+
     try {
 
         /* =========================================
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
 
 
         /* =========================================
-           FETCH EN PARALELO
+           FETCH PARALLEL
         ========================================= */
 
         const [
@@ -24,9 +25,11 @@ export default async function handler(req, res) {
             entradaResponse,
             salidaResponse
         ] = await Promise.all([
+
             fetch(BALANCE_URL),
             fetch(ENTRADA_URL),
             fetch(SALIDA_URL)
+
         ]);
 
 
@@ -34,27 +37,35 @@ export default async function handler(req, res) {
            JSON
         ========================================= */
 
-        const balanceData = await balanceResponse.json();
-        const entradaData = await entradaResponse.json();
-        const salidaData = await salidaResponse.json();
+        const balanceData =
+            await balanceResponse.json();
+
+        const entradaData =
+            await entradaResponse.json();
+
+        const salidaData =
+            await salidaResponse.json();
 
 
         /* =========================================
-           BALANCE DE APERTURA
+           BALANCE APERTURA
         ========================================= */
 
         let openingBalance = 0;
 
         if (
-            Array.isArray(balanceData) &&
-            balanceData.length > 0
+            Array.isArray(balanceData)
+            && balanceData.length > 0
         ) {
-            openingBalance = Number(balanceData[0].total || 0);
+
+            openingBalance =
+                Number(balanceData[0].total || 0);
+
         }
 
 
         /* =========================================
-           MAPEAR SALIDAS POR FECHA
+           MAPEAR SALIDAS
         ========================================= */
 
         const salidaMap = {};
@@ -62,53 +73,71 @@ export default async function handler(req, res) {
         salidaData.forEach(item => {
 
             salidaMap[item.weekStart] = {
-                totalOutflow: Number(item.totalOutflow || 0)
+
+                totalOutflow:
+                    Number(item.totalOutflow || 0)
+
             };
 
         });
 
 
         /* =========================================
-           CALCULO FORECAST
+           PREVISION
         ========================================= */
 
-        let runningForecast = openingBalance;
+        let previousForecast = openingBalance;
 
-        const result = entradaData.map(entry => {
+        const table = entradaData.map((entrada, index) => {
 
-            const weekStart = entry.weekStart;
+            const weekStart =
+                entrada.weekStart;
 
             const totalInflow =
-                Number(entry.totalInflow || 0);
+                Number(entrada.totalInflow || 0);
 
             const totalOutflow =
                 Number(
                     salidaMap[weekStart]?.totalOutflow || 0
                 );
 
-            /* ================================
-               FORMULA
+            /* =====================================
+               FORMULA REAL
 
-               (ENTRADA - SALIDA)
-               + BALANCE ACUMULADO
-            ================================= */
+               PREV =
+               ENTRADA
+               - SALIDA
+               + PREVISION ANTERIOR
+            ===================================== */
 
-            runningForecast =
-                runningForecast
-                + (totalInflow - totalOutflow);
+            const currentForecast =
+                totalInflow
+                - totalOutflow
+                + previousForecast;
+
+            /* guardar para siguiente semana */
+            previousForecast = currentForecast;
+
 
             return {
 
-                weekStart,
+                "SEMANA DEL":
+                    weekStart,
 
-                totalInflow:
-                    Number(totalInflow.toFixed(2)),
+                "ENTRADA (MXN)":
+                    Number(
+                        totalInflow.toFixed(2)
+                    ),
 
-                totalOutflow:
-                    Number(totalOutflow.toFixed(2)),
+                "SALIDA (MXN)":
+                    Number(
+                        totalOutflow.toFixed(2)
+                    ),
 
-                forecast:
-                    Number(runningForecast.toFixed(2))
+                "PREVISIÓN (MXN)":
+                    Number(
+                        currentForecast.toFixed(2)
+                    )
 
             };
 
@@ -120,16 +149,25 @@ export default async function handler(req, res) {
         ========================================= */
 
         return res.status(200).json({
-            openingBalance,
-            data: result
+
+            success: true,
+
+            openingBalance:
+                Number(openingBalance.toFixed(2)),
+
+            data: table
+
         });
 
     } catch (error) {
 
         return res.status(500).json({
+
             success: false,
             error: error.message
+
         });
 
     }
+
 }
