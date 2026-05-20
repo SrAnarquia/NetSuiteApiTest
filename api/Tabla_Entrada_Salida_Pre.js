@@ -17,12 +17,41 @@ const OUTFLOW_URL =
 
 /*
 |--------------------------------------------------------------------------
+| CACHE
+|--------------------------------------------------------------------------
+|
+| EVITA GOLPEAR NETSUITE
+| EN REFRESHES SEGUIDOS
+|
+*/
+
+let CACHE = {
+  data: null,
+  timestamp: 0
+};
+
+const CACHE_DURATION =
+  1000 * 60 * 5; // 5 MIN
+
+/*
+|--------------------------------------------------------------------------
 | HELPERS
 |--------------------------------------------------------------------------
 */
 
 const sleep = (ms) =>
   new Promise(resolve => setTimeout(resolve, ms));
+
+const randomDelay = () =>
+  Math.floor(
+    Math.random() * 3000
+  ) + 2000;
+
+/*
+|--------------------------------------------------------------------------
+| TO NUMBER
+|--------------------------------------------------------------------------
+*/
 
 const toNumber = (value) => {
 
@@ -41,29 +70,77 @@ const toNumber = (value) => {
 
 const normalizeArray = (data) => {
 
-  /*
-    DIRECT ARRAY
-  */
   if (Array.isArray(data)) {
     return data;
   }
 
-  /*
-    ARRAY INSIDE data
-  */
   if (Array.isArray(data?.data)) {
     return data.data;
   }
 
-  /*
-    ARRAY INSIDE periods
-  */
   if (Array.isArray(data?.periods)) {
     return data.periods;
   }
 
   return [];
 };
+
+/*
+|--------------------------------------------------------------------------
+| RETRY REQUEST
+|--------------------------------------------------------------------------
+|
+| REINTENTA SI NETSUITE
+| CORTA LA CONEXION
+|
+*/
+
+const requestWithRetry = async (
+  url,
+  params,
+  retries = 3
+) => {
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+
+    try {
+
+      return await axios.get(url, {
+        params,
+        timeout: 180000
+      });
+
+    } catch (err) {
+
+      console.log(
+        `RETRY ${attempt} => ${url}`
+      );
+
+      if (attempt === retries) {
+        throw err;
+      }
+
+      /*
+        ESPERA ANTES DE REINTENTAR
+      */
+      await sleep(
+        randomDelay()
+      );
+    }
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| LOCK
+|--------------------------------------------------------------------------
+|
+| EVITA MULTIPLES EJECUCIONES
+| SIMULTANEAS
+|
+*/
+
+let isRunning = false;
 
 /*
 |--------------------------------------------------------------------------
@@ -75,6 +152,45 @@ module.exports = async (req, res) => {
 
   try {
 
+    /*
+    |--------------------------------------------------------------------------
+    | CACHE
+    |--------------------------------------------------------------------------
+    */
+
+    const now = Date.now();
+
+    if (
+      CACHE.data &&
+      (now - CACHE.timestamp) < CACHE_DURATION
+    ) {
+
+      console.log(
+        "RETURN CACHE"
+      );
+
+      return res
+        .status(200)
+        .json(CACHE.data);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | LOCK
+    |--------------------------------------------------------------------------
+    */
+
+    if (isRunning) {
+
+      return res.status(429).json({
+        success: false,
+        error:
+          "Another refresh is running"
+      });
+    }
+
+    isRunning = true;
+
     const subsidiary =
       req.query.subsidiary || 2;
 
@@ -85,12 +201,14 @@ module.exports = async (req, res) => {
     */
 
     const balanceResponse =
-      await axios.get(BALANCE_URL, {
-        params: { subsidiary },
-        timeout: 180000
-      });
+      await requestWithRetry(
+        BALANCE_URL,
+        { subsidiary }
+      );
 
-    await sleep(2000);
+    await sleep(
+      randomDelay()
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -99,12 +217,14 @@ module.exports = async (req, res) => {
     */
 
     const inflowResponse =
-      await axios.get(INFLOW_URL, {
-        params: { subsidiary },
-        timeout: 180000
-      });
+      await requestWithRetry(
+        INFLOW_URL,
+        { subsidiary }
+      );
 
-    await sleep(2000);
+    await sleep(
+      randomDelay()
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -113,14 +233,14 @@ module.exports = async (req, res) => {
     */
 
     const outflowResponse =
-      await axios.get(OUTFLOW_URL, {
-        params: { subsidiary },
-        timeout: 180000
-      });
+      await requestWithRetry(
+        OUTFLOW_URL,
+        { subsidiary }
+      );
 
     /*
     |--------------------------------------------------------------------------
-    | NORMALIZE DATA
+    | NORMALIZE
     |--------------------------------------------------------------------------
     */
 
@@ -135,22 +255,14 @@ module.exports = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | DEBUG
-    |--------------------------------------------------------------------------
-    */
-
-    console.log("BALANCE:", balanceData);
-    console.log("INFLOW:", inflowData);
-    console.log("OUTFLOW:", outflowData);
-
-    /*
-    |--------------------------------------------------------------------------
-    | OPENING BALANCE
+    | BALANCE
     |--------------------------------------------------------------------------
     */
 
     const openingBalance =
-      toNumber(balanceData?.[0]?.total);
+      toNumber(
+        balanceData?.[0]?.total
+      );
 
     /*
     |--------------------------------------------------------------------------
@@ -162,23 +274,15 @@ module.exports = async (req, res) => {
 
     for (const row of outflowData) {
 
-      outflowMap[row.weekStart] = row;
+      outflowMap[
+        row.weekStart
+      ] = row;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | FINAL RESULT
+    | FORECAST
     |--------------------------------------------------------------------------
-    |
-    | Prev1 =
-    | Inflow1 - Outflow1 + OpeningBalance
-    |
-    | Prev2 =
-    | Inflow2 - Outflow2 + Prev1
-    |
-    | Prev3 =
-    | Inflow3 - Outflow3 + Prev2
-    |
     */
 
     let previousForecast = 0;
@@ -194,24 +298,20 @@ module.exports = async (req, res) => {
         inflowRow.weekStart;
 
       const inflow =
-        toNumber(inflowRow.totalInflow);
+        toNumber(
+          inflowRow.totalInflow
+        );
 
       const outflow =
         toNumber(
-          outflowMap[weekStart]?.totalOutflow
+          outflowMap[weekStart]
+            ?.totalOutflow
         );
-
-      /*
-      |--------------------------------------------------------------------------
-      | CURRENT FORECAST
-      |--------------------------------------------------------------------------
-      */
 
       let currentForecast = 0;
 
       /*
-        PREV1 =
-        ENTRADA1 - SALIDA1 + BALANCE
+        PREV1
       */
       if (i === 0) {
 
@@ -223,30 +323,16 @@ module.exports = async (req, res) => {
       } else {
 
         /*
-          PREVN =
-          ENTRADAN - SALIDAN + PREVIO
+          PREVN
         */
-
         currentForecast =
           inflow
           - outflow
           + previousForecast;
       }
 
-      /*
-      |--------------------------------------------------------------------------
-      | SAVE PREVIOUS
-      |--------------------------------------------------------------------------
-      */
-
       previousForecast =
         currentForecast;
-
-      /*
-      |--------------------------------------------------------------------------
-      | PUSH RESULT
-      |--------------------------------------------------------------------------
-      */
 
       finalResult.push({
 
@@ -272,15 +358,24 @@ module.exports = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | RESPONSE
+    | SAVE CACHE
     |--------------------------------------------------------------------------
     */
 
-    return res.status(200).json(
-      finalResult
-    );
+    CACHE = {
+      data: finalResult,
+      timestamp: Date.now()
+    };
+
+    isRunning = false;
+
+    return res
+      .status(200)
+      .json(finalResult);
 
   } catch (err) {
+
+    isRunning = false;
 
     console.error(err);
 
