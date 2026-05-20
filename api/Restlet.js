@@ -23,66 +23,88 @@ const token = {
   secret: process.env.TOKEN_SECRET,
 };
 
-module.exports = async (req, res) => {
+const BASE_URL =
+  "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-  try {
+const PARAMS = {
+  script: "5127",
+  deploy: "1",
+};
+
+async function getAllData() {
+
+  let pageIndex = 0;
+
+  let allRows = [];
+
+  while (true) {
+
+    console.log(
+      `PAGE ${pageIndex}`
+    );
 
     /*
-      PAYLOAD QUE OCUPA EL SUITELET
+      PAYLOAD
     */
     const payload = {
-      requestType: "ARAP_DRILLDOWN",
-      pageSize: 25,
-      pageIndex: 0,
+      requestType:
+        "ARAP_DRILLDOWN",
+
+      pageSize: 1000,
+
+      pageIndex,
+
       type: "ap",
 
       filters: {
         startDate: null,
 
-        endDate: "24/05/2026",
+        endDate:
+          "24/05/2026",
 
         subsidiary: {
           id: 2,
+
           isConsolidated: false,
-          subsidiaryList: [1, 6, 7, 4, 5, 2, 3]
+
+          subsidiaryList:
+            [1,6,7,4,5,2,3]
         }
       },
 
       precision: 2,
+
       date: null
     };
 
     /*
-      URL RESTLET
+      URL FINAL
     */
-    const baseUrl =
-      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
+    const finalUrl =
+      `${BASE_URL}?script=${PARAMS.script}&deploy=${PARAMS.deploy}`;
 
     /*
-      PARAMS
-    */
-    const params = {
-      script: "5127",
-      deploy: "1",
-    };
-
-    /*
-      REQUEST DATA OAUTH
+      REQUEST OAUTH
     */
     const request_data = {
-      url: `${baseUrl}?script=5127&deploy=1`,
+      url: finalUrl,
+
       method: "POST",
-      data: payload,
+
+      data: payload
     };
 
     /*
-      GENERAR OAUTH
+      GENERAR SIGNATURE
     */
     const oauthData =
-      oauth.authorize(request_data, token);
+      oauth.authorize(
+        request_data,
+        token
+      );
 
     /*
-      HEADER AUTH
+      HEADER
     */
     const authHeader =
       'OAuth ' +
@@ -98,50 +120,85 @@ module.exports = async (req, res) => {
       )}"`;
 
     /*
-      LLAMAR RESTLET
+      REQUEST
     */
-    const response = await axios.post(
+    const response =
+      await axios.post(
 
-      baseUrl,
+        BASE_URL,
 
-      payload,
+        payload,
 
-      {
-        params,
+        {
+          params: PARAMS,
 
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+          headers: {
+            Authorization:
+              authHeader,
 
-        responseType: "text",
-      }
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json"
+          }
+        }
+      );
+
+    /*
+      DETECTAR ARRAY
+    */
+    const rows =
+      response.data.data ||
+      response.data.rows ||
+      response.data.results ||
+      response.data.items ||
+      [];
+
+    console.log(
+      `ROWS ${rows.length}`
     );
 
     /*
-      PARSEAR
+      ACUMULAR
     */
-    const parsedData =
-      typeof response.data === "string"
-        ? JSON.parse(response.data)
-        : response.data;
+    allRows.push(...rows);
 
     /*
-      RETORNAR
+      FIN
     */
-    return res.status(200).json(parsedData);
+    if (
+      rows.length < 1000
+    ) {
 
-  } catch (err) {
+      break;
+    }
 
-    console.error(err.response?.data || err);
-
-    return res.status(500).json({
-      success: false,
-
-      error:
-        err.response?.data ||
-        err.message,
-    });
+    /*
+      SIGUIENTE PÁGINA
+    */
+    pageIndex++;
   }
-};
+
+  console.log(
+    `TOTAL ${allRows.length}`
+  );
+
+  return allRows;
+}
+
+/*
+  EJECUTAR
+*/
+getAllData()
+  .then(data => {
+
+    console.log(
+      "DONE"
+    );
+
+    console.log(
+      data.length
+    );
+  })
+  .catch(console.error);
