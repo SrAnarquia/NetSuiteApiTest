@@ -5,15 +5,15 @@ const delay = (ms) =>
 
 /*
 ==========================================
-CACHE GLOBAL
+CACHE
 ==========================================
 */
 
 let cache = null;
 let cacheTimestamp = 0;
 
-// 5 minutos
-const CACHE_DURATION = 5 * 60 * 1000;
+const CACHE_DURATION =
+  5 * 60 * 1000;
 
 export default async function handler(req, res) {
 
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
     /*
     ==========================================
-    VALIDAR CACHE
+    CACHE
     ==========================================
     */
 
@@ -31,8 +31,6 @@ export default async function handler(req, res) {
       cache &&
       (now - cacheTimestamp) < CACHE_DURATION
     ) {
-
-      console.log('RESPONDIENDO DESDE CACHE');
 
       return res.status(200).json(cache);
     }
@@ -44,13 +42,13 @@ export default async function handler(req, res) {
     */
 
     const BALANCE_URL =
-      'https://netsuiteapitest.vercel.app/api/Balance_Apertura.js';
+      'https://netsuiteapitest.vercel.app/api/Balance_Apertura';
 
     const ENTRADA_URL =
-      'https://netsuiteapitest.vercel.app/api/Entrada_Pre.js';
+      'https://netsuiteapitest.vercel.app/api/Entrada_PreV2';
 
     const SALIDA_URL =
-      'https://netsuiteapitest.vercel.app/api/Salida_Pre.js';
+      'https://netsuiteapitest.vercel.app/api/Salida_PreV2';
 
     /*
     ==========================================
@@ -58,7 +56,7 @@ export default async function handler(req, res) {
     ==========================================
     */
 
-    console.log('CONSULTANDO BALANCE');
+    console.log('BALANCE');
 
     const balanceResponse =
       await fetch(BALANCE_URL);
@@ -66,13 +64,13 @@ export default async function handler(req, res) {
     if (!balanceResponse.ok) {
 
       throw new Error(
-        `Error Balance: ${balanceResponse.status}`
+        `Balance Error: ${balanceResponse.status}`
       );
     }
 
-    await delay(10000);
+    await delay(5000);
 
-    console.log('CONSULTANDO ENTRADAS');
+    console.log('ENTRADA');
 
     const entradaResponse =
       await fetch(ENTRADA_URL);
@@ -80,13 +78,13 @@ export default async function handler(req, res) {
     if (!entradaResponse.ok) {
 
       throw new Error(
-        `Error Entrada: ${entradaResponse.status}`
+        `Entrada Error: ${entradaResponse.status}`
       );
     }
 
-    await delay(10000);
+    await delay(5000);
 
-    console.log('CONSULTANDO SALIDAS');
+    console.log('SALIDA');
 
     const salidaResponse =
       await fetch(SALIDA_URL);
@@ -94,7 +92,7 @@ export default async function handler(req, res) {
     if (!salidaResponse.ok) {
 
       throw new Error(
-        `Error Salida: ${salidaResponse.status}`
+        `Salida Error: ${salidaResponse.status}`
       );
     }
 
@@ -115,12 +113,49 @@ export default async function handler(req, res) {
 
     /*
     ==========================================
-    BALANCE APERTURA
+    BALANCE
     ==========================================
     */
 
     const balanceApertura =
       Number(balanceData?.[0]?.total || 0);
+
+    /*
+    ==========================================
+    FILA TOTAL ENTRADAS
+    ==========================================
+    */
+
+    const entradaTotalRow =
+      entradaData.find(
+        row =>
+          row.categoriaCuenta === 'Total'
+      ) || {};
+
+    /*
+    ==========================================
+    FILA TOTAL SALIDAS
+    ==========================================
+    */
+
+    const salidaTotalRow =
+      salidaData.find(
+        row =>
+          row.categoriaCuenta === 'Total'
+      ) || {};
+
+    /*
+    ==========================================
+    OBTENER SEMANAS
+    ==========================================
+    */
+
+    const semanas =
+      Object.keys(entradaTotalRow)
+        .filter(
+          key =>
+            key !== 'categoriaCuenta'
+        );
 
     /*
     ==========================================
@@ -132,61 +167,19 @@ export default async function handler(req, res) {
 
     let previsionAnterior = 0;
 
-    for (let i = 0; i < entradaData.length; i++) {
+    semanas.forEach((semana, index) => {
 
-      const entradaSemana =
-        entradaData[i] || {};
+      const entrada =
+        Number(
+          entradaTotalRow[semana] || 0
+        );
 
-      const salidaSemana =
-        salidaData[i] || {};
+      const salida =
+        Number(
+          salidaTotalRow[semana] || 0
+        );
 
-      /*
-      ==========================================
-      SEMANA / FECHA
-      ==========================================
-      */
-
-      const semanaDel =
-
-        entradaSemana.period ||
-
-        entradaSemana.weekStart ||
-
-        salidaSemana.period ||
-
-        salidaSemana.weekStart ||
-
-        null;
-
-      /*
-      ==========================================
-      ENTRADA
-      ==========================================
-      */
-
-      const entrada = Number(
-
-        entradaSemana.total_inflow ??
-
-        entradaSemana.totalInflow ??
-
-        0
-      );
-
-      /*
-      ==========================================
-      SALIDA
-      ==========================================
-      */
-
-      const salida = Number(
-
-        salidaSemana.total_outflow ??
-
-        salidaSemana.totalOutflow ??
-
-        0
-      );
+      let prevision = 0;
 
       /*
       ==========================================
@@ -194,10 +187,7 @@ export default async function handler(req, res) {
       ==========================================
       */
 
-      let prevision = 0;
-
-      // PRIMERA SEMANA
-      if (i === 0) {
+      if (index === 0) {
 
         prevision =
 
@@ -207,7 +197,6 @@ export default async function handler(req, res) {
 
       } else {
 
-        // SEMANAS SIGUIENTES
         prevision =
 
           entrada
@@ -215,15 +204,9 @@ export default async function handler(req, res) {
           + previsionAnterior;
       }
 
-      /*
-      ==========================================
-      PUSH RESULTADO
-      ==========================================
-      */
-
       resultado.push({
 
-        semanaDel,
+        semanaDel: semana,
 
         entradaMXN: Number(
           entrada.toFixed(2)
@@ -239,31 +222,30 @@ export default async function handler(req, res) {
 
       });
 
-      /*
-      ==========================================
-      GUARDAR PREVISION
-      ==========================================
-      */
-
-      previsionAnterior = prevision;
-    }
+      previsionAnterior =
+        prevision;
+    });
 
     /*
     ==========================================
-    GUARDAR CACHE
+    CACHE
     ==========================================
     */
 
     cache = resultado;
-    cacheTimestamp = Date.now();
+
+    cacheTimestamp =
+      Date.now();
 
     /*
     ==========================================
-    RESPUESTA FINAL
+    RESPONSE
     ==========================================
     */
 
-    return res.status(200).json(resultado);
+    return res
+      .status(200)
+      .json(resultado);
 
   } catch (error) {
 
@@ -273,8 +255,9 @@ export default async function handler(req, res) {
 
       success: false,
 
-      error: error.message || 'Error interno'
-
+      error:
+        error.message ||
+        'Error interno'
     });
   }
 }
