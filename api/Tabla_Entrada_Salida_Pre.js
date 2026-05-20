@@ -42,8 +42,12 @@ export default async function handler(req, res) {
     ==========================================
     */
 
+    // IMPORTANTE:
+    // NO usar Math.abs()
+    // el negativo es necesario
+
     const balanceApertura =
-      Math.abs(Number(balanceData?.[0]?.total || 0));
+      Number(balanceData?.[0]?.total || 0);
 
     /*
     ==========================================
@@ -53,7 +57,7 @@ export default async function handler(req, res) {
 
     const resultado = [];
 
-    let previsionAnterior = balanceApertura;
+    let previsionAnterior = 0;
 
     for (let i = 0; i < entradaData.length; i++) {
 
@@ -68,9 +72,7 @@ export default async function handler(req, res) {
 
       const semana =
         entradaSemana.period ||
-        entradaSemana.weekStart ||
         salidaSemana.period ||
-        salidaSemana.weekStart ||
         null;
 
       /*
@@ -105,10 +107,28 @@ export default async function handler(req, res) {
       ==========================================
       */
 
-      const prevision =
-        previsionAnterior + entrada - salida;
+      let prevision = 0;
+
+      // SEMANA 1
+      if (i === 0) {
+
+        prevision =
+          entrada
+          - salida
+          + balanceApertura;
+
+      } else {
+
+        // SEMANAS SIGUIENTES
+
+        prevision =
+          entrada
+          - salida
+          + previsionAnterior;
+      }
 
       resultado.push({
+
         semanaDel: semana,
 
         entradaMXN: Number(
