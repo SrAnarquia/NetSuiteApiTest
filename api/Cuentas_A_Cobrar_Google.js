@@ -23,8 +23,13 @@ const oauth = OAuth({
 });
 
 const token = {
-  key: process.env.TOKEN_ID,
-  secret: process.env.TOKEN_SECRET,
+
+  key:
+    process.env.TOKEN_ID,
+
+  secret:
+    process.env.TOKEN_SECRET,
+
 };
 
 module.exports = async (req, res) => {
@@ -33,13 +38,12 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    FULL URL
+    RESTLET 5135
     ==========================================
     */
 
-    const url =
-      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl" +
-      "?script=5135&deploy=1";
+    const baseUrl =
+      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
     /*
     ==========================================
@@ -48,8 +52,23 @@ module.exports = async (req, res) => {
     */
 
     const request_data = {
-      url,
-      method: "GET",
+
+      url:
+        baseUrl,
+
+      method:
+        "GET",
+
+      data: {
+
+        script:
+          "5135",
+
+        deploy:
+          "1",
+
+      },
+
     };
 
     /*
@@ -59,10 +78,37 @@ module.exports = async (req, res) => {
     */
 
     const oauthData =
-      oauth.authorize(request_data, token);
+      oauth.authorize(
+        request_data,
+        token
+      );
+
+    /*
+    ==========================================
+    AUTH HEADER
+    ==========================================
+    */
 
     const authHeader =
-      oauth.toHeader(oauthData);
+      'OAuth ' +
+
+      `realm="${process.env.ACCOUNT_ID}",` +
+
+      `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
+
+      `oauth_token="${oauthData.oauth_token}",` +
+
+      `oauth_signature_method="${oauthData.oauth_signature_method}",` +
+
+      `oauth_timestamp="${oauthData.oauth_timestamp}",` +
+
+      `oauth_nonce="${oauthData.oauth_nonce}",` +
+
+      `oauth_version="1.0",` +
+
+      `oauth_signature="${encodeURIComponent(
+        oauthData.oauth_signature
+      )}"`;
 
     /*
     ==========================================
@@ -70,23 +116,44 @@ module.exports = async (req, res) => {
     ==========================================
     */
 
-    const response = await axios.get(url, {
+    const response =
+      await axios.get(baseUrl, {
 
-      headers: {
+        params: {
 
-        ...authHeader,
+          script:
+            "5135",
 
-        realm:
-          process.env.ACCOUNT_ID,
+          deploy:
+            "1",
 
-        Accept:
-          "application/json",
+        },
 
-      },
+        headers: {
 
-      responseType: "json"
+          Authorization:
+            authHeader,
 
-    });
+          Accept:
+            "application/json",
+
+        },
+
+        responseType:
+          "text"
+
+      });
+
+    /*
+    ==========================================
+    PARSE
+    ==========================================
+    */
+
+    const parsedData =
+      typeof response.data === "string"
+        ? JSON.parse(response.data)
+        : response.data;
 
     /*
     ==========================================
@@ -94,14 +161,11 @@ module.exports = async (req, res) => {
     ==========================================
     */
 
-    return res.status(200).json({
+    return res.status(200).json([
 
-      success: true,
+      parsedData.data
 
-      data:
-        response.data
-
-    });
+    ]);
 
   } catch (err) {
 
@@ -112,11 +176,6 @@ module.exports = async (req, res) => {
       error:
         err.response?.data ||
         err.message,
-
-      details:
-        err.response?.statusText ||
-
-        null
 
     });
 
