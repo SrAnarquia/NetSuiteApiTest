@@ -33,16 +33,23 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    RESTLET URL
+    FULL URL
     ==========================================
     */
 
-    const baseUrl =
-      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
+    const url =
+      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl" +
+      "?script=5135&deploy=1";
 
-    const params = {
-      script: "5135",
-      deploy: "1",
+    /*
+    ==========================================
+    REQUEST DATA
+    ==========================================
+    */
+
+    const request_data = {
+      url,
+      method: "GET",
     };
 
     /*
@@ -51,27 +58,11 @@ module.exports = async (req, res) => {
     ==========================================
     */
 
-    const request_data = {
-      url: baseUrl,
-      method: "GET",
-      data: params,
-    };
-
     const oauthData =
       oauth.authorize(request_data, token);
 
     const authHeader =
-      'OAuth ' +
-      `realm="${process.env.ACCOUNT_ID}",` +
-      `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
-      `oauth_token="${oauthData.oauth_token}",` +
-      `oauth_signature_method="${oauthData.oauth_signature_method}",` +
-      `oauth_timestamp="${oauthData.oauth_timestamp}",` +
-      `oauth_nonce="${oauthData.oauth_nonce}",` +
-      `oauth_version="1.0",` +
-      `oauth_signature="${encodeURIComponent(
-        oauthData.oauth_signature
-      )}`;
+      oauth.toHeader(oauthData);
 
     /*
     ==========================================
@@ -79,135 +70,23 @@ module.exports = async (req, res) => {
     ==========================================
     */
 
-    const response = await axios.get(baseUrl, {
-
-      params,
+    const response = await axios.get(url, {
 
       headers: {
-        Authorization: authHeader,
-        Accept: "application/json",
+
+        ...authHeader,
+
+        realm:
+          process.env.ACCOUNT_ID,
+
+        Accept:
+          "application/json",
+
       },
 
-      responseType: "text"
+      responseType: "json"
 
     });
-
-    /*
-    ==========================================
-    PARSE JSON
-    ==========================================
-    */
-
-    const parsedData =
-      typeof response.data === "string"
-        ? JSON.parse(response.data)
-        : response.data;
-
-    /*
-    ==========================================
-    VALIDAR RESPONSE
-    ==========================================
-    */
-
-    if (!parsedData.success) {
-
-      return res.status(500).json({
-        success: false,
-        error:
-          parsedData.error ||
-          "NETSUITE_RESTLET_ERROR",
-      });
-
-    }
-
-    /*
-    ==========================================
-    EXTRAER DATA
-    ==========================================
-    */
-
-    const data =
-      parsedData.data || [];
-
-    /*
-    ==========================================
-    TRANSFORMAR RESULTADOS
-    ==========================================
-    */
-
-    const result = data.map(row => ({
-
-      periodName:
-        row.period_name,
-
-      weekStart:
-        row.week_start,
-
-      id:
-        Number(row.id),
-
-      tranid:
-        row.tranid,
-
-      transactionNumber:
-        row.transactionnumber,
-
-      transactionType:
-        row.transaction_type,
-
-      transactionDate:
-        row.trandate,
-
-      dueDate:
-        row.duedate,
-
-      closeDate:
-        row.closedate,
-
-      entity:
-        row.entity,
-
-      subsidiary:
-        row.subsidiary,
-
-      accountNumber:
-        row.acctnumber,
-
-      accountName:
-        row.account_name,
-
-      accountType:
-        row.accttype,
-
-      debit:
-        Number(row.debit || 0),
-
-      credit:
-        Number(row.credit || 0),
-
-      amountLinked:
-        Number(row.amountlinked || 0),
-
-      grossComponent:
-        Number(row.gross_component || 0),
-
-      finalComponent:
-        Number(row.final_component || 0),
-
-    }));
-
-    /*
-    ==========================================
-    TOTAL RECONSTRUIDO
-    ==========================================
-    */
-
-    const reconstructedTotal =
-      result.reduce((acc, row) => {
-
-        return acc + row.finalComponent;
-
-      }, 0);
 
     /*
     ==========================================
@@ -219,16 +98,8 @@ module.exports = async (req, res) => {
 
       success: true,
 
-      count:
-        result.length,
-
-      reconstructedTotal:
-        Number(
-          reconstructedTotal.toFixed(2)
-        ),
-
       data:
-        result,
+        response.data
 
     });
 
@@ -241,6 +112,11 @@ module.exports = async (req, res) => {
       error:
         err.response?.data ||
         err.message,
+
+      details:
+        err.response?.statusText ||
+
+        null
 
     });
 
