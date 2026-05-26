@@ -1,352 +1,391 @@
 const axios = require("axios");
-const OAuth = require("oauth-1.0a");
-const crypto = require("crypto");
-const { Parser } = require("json2csv");
-const fs = require("fs");
 
 /*
 |--------------------------------------------------------------------------
-| OAUTH
+| URLS
 |--------------------------------------------------------------------------
 */
 
-const oauth = OAuth({
-  consumer: {
-    key: process.env.CONSUMER_KEY,
-    secret: process.env.CONSUMER_SECRET,
-  },
+const BALANCE_URL =
+  "https://netsuiteapitest.vercel.app/api/Balance_Apertura.js";
 
-  signature_method: "HMAC-SHA256",
+const INFLOW_URL =
+  "https://netsuiteapitest.vercel.app/api/Entrada_PreV1.js";
 
-  hash_function(base_string, key) {
-    return crypto
-      .createHmac("sha256", key)
-      .update(base_string)
-      .digest("base64");
-  },
-});
+const OUTFLOW_URL =
+  "https://netsuiteapitest.vercel.app/api/Salida_PreV1.js";
 
-const token = {
-  key: process.env.TOKEN_ID,
-  secret: process.env.TOKEN_SECRET,
+/*
+|--------------------------------------------------------------------------
+| CACHE
+|--------------------------------------------------------------------------
+|
+| EVITA GOLPEAR NETSUITE
+| EN REFRESHES SEGUIDOS
+|
+*/
+
+let CACHE = {
+  data: null,
+  timestamp: 0
 };
 
-/*
-|--------------------------------------------------------------------------
-| CONFIG
-|--------------------------------------------------------------------------
-*/
-
-const RESTLET_URL =
-  "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5127&deploy=1";
-
-const PAGE_SIZE = 1000;
+const CACHE_DURATION =
+  1000 * 60 * 5; // 5 MIN
 
 /*
 |--------------------------------------------------------------------------
-| SLEEP
+| HELPERS
 |--------------------------------------------------------------------------
 */
 
 const sleep = (ms) =>
   new Promise(resolve => setTimeout(resolve, ms));
 
+const randomDelay = () =>
+  Math.floor(
+    Math.random() * 3000
+  ) + 2000;
+
 /*
 |--------------------------------------------------------------------------
-| GET AUTH HEADER
+| TO NUMBER
 |--------------------------------------------------------------------------
 */
 
-const getAuthHeader = () => {
+const toNumber = (value) => {
 
-  const request_data = {
-    url: RESTLET_URL,
-    method: "GET"
-  };
+  const n = Number(value);
 
-  const oauthData =
-    oauth.authorize(
-      request_data,
-      token
-    );
-
-  return (
-    'OAuth ' +
-    `realm="${process.env.ACCOUNT_ID}",` +
-    `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
-    `oauth_token="${oauthData.oauth_token}",` +
-    `oauth_signature_method="${oauthData.oauth_signature_method}",` +
-    `oauth_timestamp="${oauthData.oauth_timestamp}",` +
-    `oauth_nonce="${oauthData.oauth_nonce}",` +
-    `oauth_version="1.0",` +
-    `oauth_signature="${encodeURIComponent(
-      oauthData.oauth_signature
-    )}"`
-  );
+  return isNaN(n)
+    ? 0
+    : n;
 };
 
 /*
 |--------------------------------------------------------------------------
-| MAIN
+| NORMALIZE ARRAY
 |--------------------------------------------------------------------------
 */
 
-(async () => {
+const normalizeArray = (data) => {
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  if (Array.isArray(data?.periods)) {
+    return data.periods;
+  }
+
+  return [];
+};
+
+/*
+|--------------------------------------------------------------------------
+| RETRY REQUEST
+|--------------------------------------------------------------------------
+|
+| REINTENTA SI NETSUITE
+| CORTA LA CONEXION
+|
+*/
+
+const requestWithRetry = async (
+  url,
+  params,
+  retries = 3
+) => {
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+
+    try {
+
+      return await axios.get(url, {
+        params,
+        timeout: 180000
+      });
+
+    } catch (err) {
+
+      console.log(
+        `RETRY ${attempt} => ${url}`
+      );
+
+      if (attempt === retries) {
+        throw err;
+      }
+
+      /*
+        ESPERA ANTES DE REINTENTAR
+      */
+      await sleep(
+        randomDelay()
+      );
+    }
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| LOCK
+|--------------------------------------------------------------------------
+|
+| EVITA MULTIPLES EJECUCIONES
+| SIMULTANEAS
+|
+*/
+
+let isRunning = false;
+
+/*
+|--------------------------------------------------------------------------
+| ENDPOINT
+|--------------------------------------------------------------------------
+*/
+
+module.exports = async (req, res) => {
 
   try {
 
-    let pageIndex = 0;
+    /*
+    |--------------------------------------------------------------------------
+    | CACHE
+    |--------------------------------------------------------------------------
+    */
 
-    let keepGoing = true;
+    const now = Date.now();
 
-    let allRows = [];
-
-    while (keepGoing) {
-
-      console.log(
-        `PAGE => ${pageIndex}`
-      );
-
-      /*
-      |--------------------------------------------------------------------------
-      | PARAMS
-      |--------------------------------------------------------------------------
-      */
-
-      const params = {
-
-        requestType:
-          "ARAP_DRILLDOWN",
-
-        pageSize:
-          PAGE_SIZE,
-
-        pageIndex,
-
-        type:
-          "ap",
-
-        filters: JSON.stringify({
-
-          startDate:
-            null,
-
-          endDate:
-            "24/05/2026",
-
-          period:
-            "18/05/2026",
-
-          subsidiary: {
-
-            id:
-              2,
-
-            isConsolidated:
-              false,
-
-            subsidiaryList:
-              [1,6,7,4,5,2,3]
-          }
-        }),
-
-        precision:
-          2,
-
-        forecastBy:
-          2,
-
-        periodDate:
-          "18/05/2026",
-
-        year:
-          2026,
-
-        date:
-          ""
-      };
-
-      /*
-      |--------------------------------------------------------------------------
-      | REQUEST
-      |--------------------------------------------------------------------------
-      */
-
-      const response =
-        await axios.get(
-          RESTLET_URL,
-          {
-            params,
-
-            timeout:
-              300000,
-
-            headers: {
-              Authorization:
-                getAuthHeader()
-            }
-          }
-        );
-
-      /*
-      |--------------------------------------------------------------------------
-      | BODY
-      |--------------------------------------------------------------------------
-      */
-
-      const result =
-        response.data;
+    if (
+      CACHE.data &&
+      (now - CACHE.timestamp) < CACHE_DURATION
+    ) {
 
       console.log(
-        "RAW RESPONSE:"
+        "RETURN CACHE"
       );
 
-      console.log(result);
-
-      /*
-      |--------------------------------------------------------------------------
-      | AJUSTAR SEGUN RESPONSE REAL
-      |--------------------------------------------------------------------------
-      */
-
-      let rows = [];
-
-      /*
-        SI EL RESTLET
-        REGRESA:
-        {
-          body: "...."
-        }
-      */
-
-      if (result?.body) {
-
-        try {
-
-          const parsed =
-            JSON.parse(
-              result.body
-            );
-
-          rows =
-            parsed.data ||
-            parsed.rows ||
-            parsed.results ||
-            [];
-
-        } catch (e) {
-
-          console.log(
-            "NO JSON BODY"
-          );
-
-          rows = [];
-        }
-
-      } else {
-
-        rows =
-          result.data ||
-          result.rows ||
-          result.results ||
-          [];
-      }
-
-      /*
-      |--------------------------------------------------------------------------
-      | LOG
-      |--------------------------------------------------------------------------
-      */
-
-      console.log(
-        `ROWS => ${rows.length}`
-      );
-
-      /*
-      |--------------------------------------------------------------------------
-      | FIN
-      |--------------------------------------------------------------------------
-      */
-
-      if (!rows.length) {
-
-        keepGoing = false;
-
-        break;
-      }
-
-      /*
-      |--------------------------------------------------------------------------
-      | ACUMULAR
-      |--------------------------------------------------------------------------
-      */
-
-      allRows.push(
-        ...rows
-      );
-
-      /*
-      |--------------------------------------------------------------------------
-      | NEXT PAGE
-      |--------------------------------------------------------------------------
-      */
-
-      pageIndex++;
-
-      /*
-      |--------------------------------------------------------------------------
-      | DELAY
-      |--------------------------------------------------------------------------
-      */
-
-      await sleep(1500);
+      return res
+        .status(200)
+        .json(CACHE.data);
     }
 
     /*
     |--------------------------------------------------------------------------
-    | TOTAL
+    | LOCK
     |--------------------------------------------------------------------------
     */
 
-    console.log(
-      `TOTAL ROWS => ${allRows.length}`
+    if (isRunning) {
+
+      return res.status(429).json({
+        success: false,
+        error:
+          "Another refresh is running"
+      });
+    }
+
+    isRunning = true;
+
+    const subsidiary =
+      req.query.subsidiary || 2;
+
+    /*
+    |--------------------------------------------------------------------------
+    | 1. BALANCE
+    |--------------------------------------------------------------------------
+    */
+
+    const balanceResponse =
+      await requestWithRetry(
+        BALANCE_URL,
+        { subsidiary }
+      );
+
+    await sleep(
+      randomDelay()
     );
 
     /*
     |--------------------------------------------------------------------------
-    | CSV
+    | 2. INFLOW
     |--------------------------------------------------------------------------
     */
 
-    const parser =
-      new Parser();
+    const inflowResponse =
+      await requestWithRetry(
+        INFLOW_URL,
+        { subsidiary }
+      );
 
-    const csv =
-      parser.parse(
-        allRows
+    await sleep(
+      randomDelay()
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3. OUTFLOW
+    |--------------------------------------------------------------------------
+    */
+
+    const outflowResponse =
+      await requestWithRetry(
+        OUTFLOW_URL,
+        { subsidiary }
       );
 
     /*
     |--------------------------------------------------------------------------
-    | SAVE FILE
+    | NORMALIZE
     |--------------------------------------------------------------------------
     */
 
-    fs.writeFileSync(
-      "cash360.csv",
-      csv
-    );
+    const balanceData =
+      normalizeArray(balanceResponse.data);
 
-    console.log(
-      "CSV GENERATED"
-    );
+    const inflowData =
+      normalizeArray(inflowResponse.data);
+
+    const outflowData =
+      normalizeArray(outflowResponse.data);
+
+    /*
+    |--------------------------------------------------------------------------
+    | BALANCE
+    |--------------------------------------------------------------------------
+    */
+
+    const openingBalance =
+      toNumber(
+        balanceData?.[0]?.total
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | MAP OUTFLOW
+    |--------------------------------------------------------------------------
+    */
+
+    const outflowMap = {};
+
+    for (const row of outflowData) {
+
+      outflowMap[
+        row.weekStart
+      ] = row;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORECAST
+    |--------------------------------------------------------------------------
+    */
+
+    let previousForecast = 0;
+
+    const finalResult = [];
+
+    for (let i = 0; i < inflowData.length; i++) {
+
+      const inflowRow =
+        inflowData[i];
+
+      const weekStart =
+        inflowRow.weekStart;
+
+      const inflow =
+        toNumber(
+          inflowRow.totalInflow
+        );
+
+      const outflow =
+        toNumber(
+          outflowMap[weekStart]
+            ?.totalOutflow
+        );
+
+      let currentForecast = 0;
+
+      /*
+        PREV1
+      */
+      if (i === 0) {
+
+        currentForecast =
+          inflow
+          - outflow
+          + openingBalance;
+
+      } else {
+
+        /*
+          PREVN
+        */
+        currentForecast =
+          inflow
+          - outflow
+          + previousForecast;
+      }
+
+      previousForecast =
+        currentForecast;
+
+      finalResult.push({
+
+        semanaDel:
+          weekStart,
+
+        entradaMXN:
+          Number(
+            inflow.toFixed(2)
+          ),
+
+        salidaMXN:
+          Number(
+            outflow.toFixed(2)
+          ),
+
+        previsionMXN:
+          Number(
+            currentForecast.toFixed(2)
+          )
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SAVE CACHE
+    |--------------------------------------------------------------------------
+    */
+
+    CACHE = {
+      data: finalResult,
+      timestamp: Date.now()
+    };
+
+    isRunning = false;
+
+    return res
+      .status(200)
+      .json(finalResult);
 
   } catch (err) {
 
-    console.error(
-      err.response?.data ||
-      err.message
-    );
-  }
+    isRunning = false;
 
-})();
+    console.error(err);
+
+    return res.status(500).json({
+
+      success: false,
+
+      error:
+        err.response?.data ||
+        err.message
+    });
+  }
+};
