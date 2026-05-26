@@ -24,11 +24,9 @@ const oauth = OAuth({
 
 const token = {
 
-  key:
-    process.env.TOKEN_ID,
+  key: process.env.TOKEN_ID,
 
-  secret:
-    process.env.TOKEN_SECRET,
+  secret: process.env.TOKEN_SECRET,
 
 };
 
@@ -38,34 +36,24 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    RESTLET 5135
+    NETSUITE
     ==========================================
     */
 
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-    /*
-    ==========================================
-    REQUEST DATA
-    ==========================================
-    */
-
     const request_data = {
 
-      url:
-        baseUrl,
+      url: baseUrl,
 
-      method:
-        "GET",
+      method: "GET",
 
       data: {
 
-        script:
-          "5135",
+        script: "5135",
 
-        deploy:
-          "1",
+        deploy: "1",
 
       },
 
@@ -85,7 +73,7 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    AUTH HEADER
+    HEADER
     ==========================================
     */
 
@@ -121,32 +109,25 @@ module.exports = async (req, res) => {
 
         params: {
 
-          script:
-            "5135",
+          script: "5135",
 
-          deploy:
-            "1",
+          deploy: "1",
 
         },
 
         headers: {
 
-          Authorization:
-            authHeader,
+          Authorization: authHeader,
 
-          Accept:
-            "application/json",
+          Accept: "application/json",
 
         },
-
-        responseType:
-          "text"
 
       });
 
     /*
     ==========================================
-    PARSE
+    DATA
     ==========================================
     */
 
@@ -157,13 +138,53 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    RESPONSE
+    CONVERTIR A TABLA
+    ==========================================
+    */
+
+    const registros = parsedData.data;
+
+    if (!Array.isArray(registros) || registros.length === 0) {
+
+      return res.status(200).json([]);
+
+    }
+
+    // COLUMNAS
+    const headers =
+      Object.keys(registros[0]);
+
+    // FILAS
+    const rows = registros.map(registro =>
+
+      headers.map(header => {
+
+        const value = registro[header];
+
+        if (
+          value === null ||
+          value === undefined
+        ) {
+          return "";
+        }
+
+        return value;
+
+      })
+
+    );
+
+    /*
+    ==========================================
+    RESPUESTA PARA GOOGLE SHEETS
     ==========================================
     */
 
     return res.status(200).json([
 
-      parsedData.data
+      headers,
+
+      ...rows
 
     ]);
 
