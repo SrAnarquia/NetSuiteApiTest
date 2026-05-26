@@ -5,8 +5,11 @@ const crypto = require("crypto");
 const oauth = OAuth({
 
   consumer: {
+
     key: process.env.CONSUMER_KEY,
+
     secret: process.env.CONSUMER_SECRET,
+
   },
 
   signature_method: "HMAC-SHA256",
@@ -36,7 +39,16 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    RESTLET 5135
+    PAGE
+    ==========================================
+    */
+
+    const page =
+      Number(req.query.page || 0);
+
+    /*
+    ==========================================
+    RESTLET URL
     ==========================================
     */
 
@@ -60,6 +72,8 @@ module.exports = async (req, res) => {
         script: "5135",
 
         deploy: "1",
+
+        page
 
       },
 
@@ -119,6 +133,8 @@ module.exports = async (req, res) => {
 
           deploy: "1",
 
+          page
+
         },
 
         headers: {
@@ -150,11 +166,9 @@ module.exports = async (req, res) => {
     ==========================================
     */
 
-    return res.status(200).json([
-
-      parsedData.data
-
-    ]);
+    return res.status(200).json(
+      parsedData
+    );
 
   } catch (err) {
 
