@@ -2,37 +2,54 @@ const axios = require("axios");
 
 /*
 |--------------------------------------------------------------------------
-| CONFIG
+| URLS
 |--------------------------------------------------------------------------
 */
 
 const BALANCE_URL =
   "https://netsuiteapitest.vercel.app/api/Balance_Apertura.js";
 
-const OUTFLOW_URL =
-  "https://netsuiteapitest.vercel.app/api/Salida_PreV2.js";
-
 const INFLOW_URL =
-  "https://netsuiteapitest.vercel.app/api/Entrada_PreV2.js";
+  "https://netsuiteapitest.vercel.app/api/Entrada_PreV1.js";
+
+const OUTFLOW_URL =
+  "https://netsuiteapitest.vercel.app/api/Salida_PreV1.js";
 
 /*
 |--------------------------------------------------------------------------
-| DELAY CONTROL
+| CACHE
 |--------------------------------------------------------------------------
-| IMPORTANTE:
-| NetSuite se rompe si haces llamadas simultáneas.
-| Por eso:
-|   - llamadas secuenciales
-|   - delay entre requests
+|
+| EVITA GOLPEAR NETSUITE
+| EN REFRESHES SEGUIDOS
+|
+*/
+
+let CACHE = {
+  data: null,
+  timestamp: 0
+};
+
+const CACHE_DURATION =
+  1000 * 60 * 5; // 5 MIN
+
+/*
+|--------------------------------------------------------------------------
+| HELPERS
 |--------------------------------------------------------------------------
 */
 
 const sleep = (ms) =>
   new Promise(resolve => setTimeout(resolve, ms));
 
+const randomDelay = () =>
+  Math.floor(
+    Math.random() * 3000
+  ) + 2000;
+
 /*
 |--------------------------------------------------------------------------
-| SAFE NUMBER
+| TO NUMBER
 |--------------------------------------------------------------------------
 */
 
@@ -47,7 +64,87 @@ const toNumber = (value) => {
 
 /*
 |--------------------------------------------------------------------------
-| MAIN ENDPOINT
+| NORMALIZE ARRAY
+|--------------------------------------------------------------------------
+*/
+
+const normalizeArray = (data) => {
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  if (Array.isArray(data?.periods)) {
+    return data.periods;
+  }
+
+  return [];
+};
+
+/*
+|--------------------------------------------------------------------------
+| RETRY REQUEST
+|--------------------------------------------------------------------------
+|
+| REINTENTA SI NETSUITE
+| CORTA LA CONEXION
+|
+*/
+
+const requestWithRetry = async (
+  url,
+  params,
+  retries = 3
+) => {
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+
+    try {
+
+      return await axios.get(url, {
+        params,
+        timeout: 180000
+      });
+
+    } catch (err) {
+
+      console.log(
+        `RETRY ${attempt} => ${url}`
+      );
+
+      if (attempt === retries) {
+        throw err;
+      }
+
+      /*
+        ESPERA ANTES DE REINTENTAR
+      */
+      await sleep(
+        randomDelay()
+      );
+    }
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| LOCK
+|--------------------------------------------------------------------------
+|
+| EVITA MULTIPLES EJECUCIONES
+| SIMULTANEAS
+|
+*/
+
+let isRunning = false;
+
+/*
+|--------------------------------------------------------------------------
+| ENDPOINT
 |--------------------------------------------------------------------------
 */
 
@@ -55,8 +152,47 @@ module.exports = async (req, res) => {
 
   try {
 
+    /*
+    |--------------------------------------------------------------------------
+    | CACHE
+    |--------------------------------------------------------------------------
+    */
+
+    const now = Date.now();
+
+    if (
+      CACHE.data &&
+      (now - CACHE.timestamp) < CACHE_DURATION
+    ) {
+
+      console.log(
+        "RETURN CACHE"
+      );
+
+      return res
+        .status(200)
+        .json(CACHE.data);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | LOCK
+    |--------------------------------------------------------------------------
+    */
+
+    if (isRunning) {
+
+      return res.status(429).json({
+        success: false,
+        error:
+          "Another refresh is running"
+      });
+    }
+
+    isRunning = true;
+
     const subsidiary =
-      req.query.subsidiary || "2";
+      req.query.subsidiary || 2;
 
     /*
     |--------------------------------------------------------------------------
@@ -65,198 +201,181 @@ module.exports = async (req, res) => {
     */
 
     const balanceResponse =
-      await axios.get(BALANCE_URL, {
-        params: { subsidiary },
-        timeout: 120000
-      });
+      await requestWithRetry(
+        BALANCE_URL,
+        { subsidiary }
+      );
 
-    await sleep(1500);
-
-    /*
-    |--------------------------------------------------------------------------
-    | 2. OUTFLOW
-    |--------------------------------------------------------------------------
-    */
-
-    const outflowResponse =
-      await axios.get(OUTFLOW_URL, {
-        params: { subsidiary },
-        timeout: 120000
-      });
-
-    await sleep(1500);
+    await sleep(
+      randomDelay()
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | 3. INFLOW
+    | 2. INFLOW
     |--------------------------------------------------------------------------
     */
 
     const inflowResponse =
-      await axios.get(INFLOW_URL, {
-        params: { subsidiary },
-        timeout: 120000
-      });
+      await requestWithRetry(
+        INFLOW_URL,
+        { subsidiary }
+      );
+
+    await sleep(
+      randomDelay()
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | DATA
+    | 3. OUTFLOW
+    |--------------------------------------------------------------------------
+    */
+
+    const outflowResponse =
+      await requestWithRetry(
+        OUTFLOW_URL,
+        { subsidiary }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE
     |--------------------------------------------------------------------------
     */
 
     const balanceData =
-      balanceResponse.data || [];
-
-    const outflowData =
-      outflowResponse.data || [];
+      normalizeArray(balanceResponse.data);
 
     const inflowData =
-      inflowResponse.data || [];
+      normalizeArray(inflowResponse.data);
+
+    const outflowData =
+      normalizeArray(outflowResponse.data);
 
     /*
     |--------------------------------------------------------------------------
-    | BALANCE INICIAL
+    | BALANCE
     |--------------------------------------------------------------------------
     */
 
-    const initialBalance =
-      toNumber(balanceData?.[0]?.total);
+    const openingBalance =
+      toNumber(
+        balanceData?.[0]?.total
+      );
 
     /*
     |--------------------------------------------------------------------------
-    | MAP OUTFLOWS
+    | MAP OUTFLOW
     |--------------------------------------------------------------------------
     */
 
     const outflowMap = {};
 
-    outflowData.forEach(item => {
+    for (const row of outflowData) {
 
-      outflowMap[item.weekStart] = {
-        outflow: toNumber(item.totalOutflow)
-      };
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | MAP INFLOWS
-    |--------------------------------------------------------------------------
-    */
-
-    const inflowMap = {};
-
-    inflowData.forEach(item => {
-
-      inflowMap[item.weekStart] = {
-        inflow: toNumber(item.totalInflow)
-      };
-    });
+      outflowMap[
+        row.weekStart
+      ] = row;
+    }
 
     /*
     |--------------------------------------------------------------------------
-    | GET ALL PERIODS
+    | FORECAST
     |--------------------------------------------------------------------------
     */
 
-    const allWeeks =
-      [
-        ...Object.keys(inflowMap),
-        ...Object.keys(outflowMap)
-      ];
+    let previousForecast = 0;
 
-    /*
-    |--------------------------------------------------------------------------
-    | REMOVE DUPLICATES
-    |--------------------------------------------------------------------------
-    */
+    const finalResult = [];
 
-    const uniqueWeeks =
-      [...new Set(allWeeks)];
+    for (let i = 0; i < inflowData.length; i++) {
 
-    /*
-    |--------------------------------------------------------------------------
-    | SORT DD/MM/YYYY
-    |--------------------------------------------------------------------------
-    */
+      const inflowRow =
+        inflowData[i];
 
-    uniqueWeeks.sort((a, b) => {
+      const weekStart =
+        inflowRow.weekStart;
 
-      const [da, ma, ya] = a.split("/");
-      const [db, mb, yb] = b.split("/");
+      const inflow =
+        toNumber(
+          inflowRow.totalInflow
+        );
 
-      const dateA =
-        new Date(`${ya}-${ma}-${da}`);
+      const outflow =
+        toNumber(
+          outflowMap[weekStart]
+            ?.totalOutflow
+        );
 
-      const dateB =
-        new Date(`${yb}-${mb}-${db}`);
+      let currentForecast = 0;
 
-      return dateA - dateB;
-    });
+      /*
+        PREV1
+      */
+      if (i === 0) {
 
-    /*
-    |--------------------------------------------------------------------------
-    | BUILD FINAL RESPONSE
-    |--------------------------------------------------------------------------
-    */
+        currentForecast =
+          inflow
+          - outflow
+          + openingBalance;
 
-    let previousForecast =
-      initialBalance;
-
-    const finalResult =
-      uniqueWeeks.map((week, index) => {
-
-        const inflow =
-          toNumber(
-            inflowMap?.[week]?.inflow
-          );
-
-        const outflow =
-          toNumber(
-            outflowMap?.[week]?.outflow
-          );
+      } else {
 
         /*
-        |--------------------------------------------------------------------------
-        | FORECAST
-        |--------------------------------------------------------------------------
-        |
-        | Prev1 = Entrada1 - Salida1 + (Balance)
-        | Prev2 = Entrada2 - Salida2 + (Prev1)
-        |--------------------------------------------------------------------------
+          PREVN
         */
-
-        const forecast =
+        currentForecast =
           inflow
           - outflow
           + previousForecast;
+      }
 
-        previousForecast =
-          forecast;
+      previousForecast =
+        currentForecast;
 
-        return {
+      finalResult.push({
 
-          semanaDel: week,
+        semanaDel:
+          weekStart,
 
-          entradaMXN:
-            Number(inflow.toFixed(2)),
+        entradaMXN:
+          Number(
+            inflow.toFixed(2)
+          ),
 
-          salidaMXN:
-            Number(outflow.toFixed(2)),
+        salidaMXN:
+          Number(
+            outflow.toFixed(2)
+          ),
 
-          previsionMXN:
-            Number(forecast.toFixed(2))
-        };
+        previsionMXN:
+          Number(
+            currentForecast.toFixed(2)
+          )
       });
+    }
 
     /*
     |--------------------------------------------------------------------------
-    | RESPONSE
+    | SAVE CACHE
     |--------------------------------------------------------------------------
     */
 
-    return res.status(200).json(finalResult);
+    CACHE = {
+      data: finalResult,
+      timestamp: Date.now()
+    };
+
+    isRunning = false;
+
+    return res
+      .status(200)
+      .json(finalResult);
 
   } catch (err) {
+
+    isRunning = false;
 
     console.error(err);
 
