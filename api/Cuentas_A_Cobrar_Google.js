@@ -36,12 +36,18 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    NETSUITE
+    RESTLET 5135
     ==========================================
     */
 
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
+
+    /*
+    ==========================================
+    REQUEST DATA
+    ==========================================
+    */
 
     const request_data = {
 
@@ -73,7 +79,7 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    HEADER
+    AUTH HEADER
     ==========================================
     */
 
@@ -123,11 +129,13 @@ module.exports = async (req, res) => {
 
         },
 
+        responseType: "text"
+
       });
 
     /*
     ==========================================
-    DATA
+    PARSE
     ==========================================
     */
 
@@ -138,53 +146,13 @@ module.exports = async (req, res) => {
 
     /*
     ==========================================
-    CONVERTIR A TABLA
-    ==========================================
-    */
-
-    const registros = parsedData.data;
-
-    if (!Array.isArray(registros) || registros.length === 0) {
-
-      return res.status(200).json([]);
-
-    }
-
-    // COLUMNAS
-    const headers =
-      Object.keys(registros[0]);
-
-    // FILAS
-    const rows = registros.map(registro =>
-
-      headers.map(header => {
-
-        const value = registro[header];
-
-        if (
-          value === null ||
-          value === undefined
-        ) {
-          return "";
-        }
-
-        return value;
-
-      })
-
-    );
-
-    /*
-    ==========================================
-    RESPUESTA PARA GOOGLE SHEETS
+    RESPONSE
     ==========================================
     */
 
     return res.status(200).json([
 
-      headers,
-
-      ...rows
+      parsedData.data
 
     ]);
 
