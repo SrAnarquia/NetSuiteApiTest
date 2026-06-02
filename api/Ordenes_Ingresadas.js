@@ -53,43 +53,34 @@ module.exports = async (req, res) => {
       params,
       headers: {
         Authorization: authHeader,
-        Accept: "*/*",
+        Accept: "application/json",
       },
-      responseType: "text", // 🔥 CLAVE: NetSuite puede devolver texto o JSON string
+      responseType: "text",
     });
 
     let raw = response.data;
 
-    // 🔥 INTENTAR PARSE JSON SI SE PUEDE
-    let parsed;
+    //  FORZAR JSON SI ES POSIBLE
+    let json;
 
-    try {
-      parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    } catch (e) {
-      parsed = null;
+    if (typeof raw === "string") {
+      try {
+        json = JSON.parse(raw);
+      } catch (e) {
+        throw new Error("NetSuite no devolvió JSON válido");
+      }
+    } else {
+      json = raw;
     }
 
-    // 🔥 CASO 1: JSON válido
-    if (parsed && typeof parsed === "object") {
+    //  SOLO DATA
+    const data = json.data ?? json;
 
-      return res.status(200).json({
-        success: true,
-        type: "json",
-        data: parsed.data ?? parsed
-      });
-    }
-
-    // 🔥 CASO 2: TEXTO / CSV / STRING PLANO
-    return res.status(200).json({
-      success: true,
-      type: "text",
-      raw: raw
-    });
+    return res.status(200).json(data);
 
   } catch (err) {
 
     return res.status(500).json({
-      success: false,
       error: err.response?.data || err.message,
     });
   }
