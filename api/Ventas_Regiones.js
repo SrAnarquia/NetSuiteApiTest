@@ -38,31 +38,50 @@ module.exports = async (req, res) => {
 
     const oauthData = oauth.authorize(request_data, token);
 
-    const authHeader = oauth.toHeader(oauthData);
+    // 🔥 EXACTAMENTE TU MISMO ESTILO DE AUTH HEADER
+    const authHeader =
+      'OAuth ' +
+      `realm="${process.env.ACCOUNT_ID}",` +
+      `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
+      `oauth_token="${oauthData.oauth_token}",` +
+      `oauth_signature_method="${oauthData.oauth_signature_method}",` +
+      `oauth_timestamp="${oauthData.oauth_timestamp}",` +
+      `oauth_nonce="${oauthData.oauth_nonce}",` +
+      `oauth_version="1.0",` +
+      `oauth_signature="${encodeURIComponent(oauthData.oauth_signature)}"`;
 
     const response = await axios.get(baseUrl, {
       params,
       headers: {
-        ...authHeader,
+        Authorization: authHeader,
         Accept: "application/json",
       },
       responseType: "text",
     });
 
-    // 🔥 Parse seguro NetSuite
-    let json = typeof response.data === "string"
-      ? JSON.parse(response.data)
-      : response.data;
+    let raw = response.data;
 
-    // 🔥 SOLO DATA (lo que pediste)
-    const data = json.data || [];
+    let json;
+
+    if (typeof raw === "string") {
+      try {
+        json = JSON.parse(raw);
+      } catch (e) {
+        throw new Error("NetSuite no devolvió JSON válido");
+      }
+    } else {
+      json = raw;
+    }
+
+    // 🔥 SOLO DATA (como pediste)
+    const data = json.data ?? json;
 
     return res.status(200).json(data);
 
   } catch (err) {
 
-    return res.status(500).json(
-      err.response?.data || err.message
-    );
+    return res.status(500).json({
+      error: err.response?.data || err.message,
+    });
   }
 };
