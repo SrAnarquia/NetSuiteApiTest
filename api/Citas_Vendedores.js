@@ -9,10 +9,7 @@ const oauth = OAuth({
   },
   signature_method: "HMAC-SHA256",
   hash_function(base_string, key) {
-    return crypto
-      .createHmac("sha256", key)
-      .update(base_string)
-      .digest("base64");
+    return crypto.createHmac("sha256", key).update(base_string).digest("base64");
   },
 });
 
@@ -22,12 +19,14 @@ const token = {
 };
 
 module.exports = async (req, res) => {
+
   try {
+
     const baseUrl =
-      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
+      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5156&deploy=1";
 
     const params = {
-      script: "5156",
+      script: "5155",
       deploy: "1",
     };
 
@@ -39,8 +38,9 @@ module.exports = async (req, res) => {
 
     const oauthData = oauth.authorize(request_data, token);
 
+    // 🔥 EXACTAMENTE TU MISMO ESTILO DE AUTH HEADER
     const authHeader =
-      "OAuth " +
+      'OAuth ' +
       `realm="${process.env.ACCOUNT_ID}",` +
       `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
       `oauth_token="${oauthData.oauth_token}",` +
@@ -48,9 +48,7 @@ module.exports = async (req, res) => {
       `oauth_timestamp="${oauthData.oauth_timestamp}",` +
       `oauth_nonce="${oauthData.oauth_nonce}",` +
       `oauth_version="1.0",` +
-      `oauth_signature="${encodeURIComponent(
-        oauthData.oauth_signature
-      )}"`;
+      `oauth_signature="${encodeURIComponent(oauthData.oauth_signature)}"`;
 
     const response = await axios.get(baseUrl, {
       params,
@@ -61,26 +59,28 @@ module.exports = async (req, res) => {
       responseType: "text",
     });
 
+    let raw = response.data;
+
     let json;
 
-    if (typeof response.data === "string") {
-      json = JSON.parse(response.data);
+    if (typeof raw === "string") {
+      try {
+        json = JSON.parse(raw);
+      } catch (e) {
+        throw new Error("NetSuite no devolvió JSON válido");
+      }
     } else {
-      json = response.data;
+      json = raw;
     }
 
-    return res.status(200).json(json);
+    // SOLO DATA (como pediste)
+    const data = json.data ?? json;
+
+    return res.status(200).json(data);
 
   } catch (err) {
 
-    console.error(
-      "NETSUITE ERROR:",
-      err.response?.status,
-      err.response?.data || err.message
-    );
-
     return res.status(500).json({
-      success: false,
       error: err.response?.data || err.message,
     });
   }
