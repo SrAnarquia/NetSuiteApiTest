@@ -9,7 +9,10 @@ const oauth = OAuth({
   },
   signature_method: "HMAC-SHA256",
   hash_function(base_string, key) {
-    return crypto.createHmac("sha256", key).update(base_string).digest("base64");
+    return crypto
+      .createHmac("sha256", key)
+      .update(base_string)
+      .digest("base64");
   },
 });
 
@@ -36,9 +39,11 @@ module.exports = async (req, res) => {
       data: params,
     };
 
-    const oauthData = oauth.authorize(request_data, token);
+    const oauthData = oauth.authorize(
+      request_data,
+      token
+    );
 
-    // 🔥 EXACTAMENTE TU MISMO ESTILO DE AUTH HEADER
     const authHeader =
       'OAuth ' +
       `realm="${process.env.ACCOUNT_ID}",` +
@@ -48,7 +53,9 @@ module.exports = async (req, res) => {
       `oauth_timestamp="${oauthData.oauth_timestamp}",` +
       `oauth_nonce="${oauthData.oauth_nonce}",` +
       `oauth_version="1.0",` +
-      `oauth_signature="${encodeURIComponent(oauthData.oauth_signature)}"`;
+      `oauth_signature="${encodeURIComponent(
+        oauthData.oauth_signature
+      )}"`;
 
     const response = await axios.get(baseUrl, {
       params,
@@ -56,32 +63,35 @@ module.exports = async (req, res) => {
         Authorization: authHeader,
         Accept: "application/json",
       },
-      responseType: "text",
     });
 
-    let raw = response.data;
+    const data = response.data;
 
-    let json;
+    if (!data.success) {
 
-    if (typeof raw === "string") {
-      try {
-        json = JSON.parse(raw);
-      } catch (e) {
-        throw new Error("NetSuite no devolvió JSON válido");
-      }
-    } else {
-      json = raw;
+      return res.status(500).json({
+        success: false,
+        error: data.error || data.message,
+      });
+
     }
 
-    // SOLO DATA (como pediste)
-    const data = json.data ?? json;
-
-    return res.status(200).json(data);
+    return res.status(200).json({
+      success: true,
+      registros: data.count,
+      mensaje: data.message,
+      fecha: new Date().toISOString(),
+    });
 
   } catch (err) {
 
     return res.status(500).json({
-      error: err.response?.data || err.message,
+      success: false,
+      error:
+        err.response?.data ||
+        err.message,
     });
+
   }
+
 };
