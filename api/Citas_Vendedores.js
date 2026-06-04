@@ -9,10 +9,7 @@ const oauth = OAuth({
   },
   signature_method: "HMAC-SHA256",
   hash_function(base_string, key) {
-    return crypto
-      .createHmac("sha256", key)
-      .update(base_string)
-      .digest("base64");
+    return crypto.createHmac("sha256", key).update(base_string).digest("base64");
   },
 });
 
@@ -41,6 +38,7 @@ module.exports = async (req, res) => {
 
     const oauthData = oauth.authorize(request_data, token);
 
+    // 🔥 FIRMA MANUAL CORRECTA (SIN encodeURIComponent)
     const authHeader =
       'OAuth ' +
       `realm="${process.env.ACCOUNT_ID}",` +
@@ -61,38 +59,27 @@ module.exports = async (req, res) => {
       responseType: "text",
     });
 
-    // 🔥 RAW RESPONSE
-    const raw = response.data;
+    let raw = response.data;
 
-    console.log("RAW NETSUITE RESPONSE:", raw);
+    let json;
 
-    let parsed;
-
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      throw new Error("No se pudo parsear JSON de NetSuite: " + raw);
+    if (typeof raw === "string") {
+      try {
+        json = JSON.parse(raw);
+      } catch (e) {
+        throw new Error("NetSuite no devolvió JSON válido: " + raw);
+      }
+    } else {
+      json = raw;
     }
 
-    // 🔥 VALIDACIÓN DE STATUS
-    if (!parsed.success) {
-      return res.status(500).json({
-        success: false,
-        error: parsed.message || parsed.error,
-      });
-    }
+    const data = json.data ?? json;
 
-    return res.status(200).json({
-      success: true,
-      status: parsed.status,
-      message: parsed.message,
-      count: parsed.count,
-    });
+    return res.status(200).json(data);
 
   } catch (err) {
 
     return res.status(500).json({
-      success: false,
       error: err.response?.data || err.message,
     });
   }
