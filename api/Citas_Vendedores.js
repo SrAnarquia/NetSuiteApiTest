@@ -39,10 +39,7 @@ module.exports = async (req, res) => {
       data: params,
     };
 
-    const oauthData = oauth.authorize(
-      request_data,
-      token
-    );
+    const oauthData = oauth.authorize(request_data, token);
 
     const authHeader =
       'OAuth ' +
@@ -53,9 +50,7 @@ module.exports = async (req, res) => {
       `oauth_timestamp="${oauthData.oauth_timestamp}",` +
       `oauth_nonce="${oauthData.oauth_nonce}",` +
       `oauth_version="1.0",` +
-      `oauth_signature="${encodeURIComponent(
-        oauthData.oauth_signature
-      )}"`;
+      `oauth_signature="${oauthData.oauth_signature}"`;
 
     const response = await axios.get(baseUrl, {
       params,
@@ -63,35 +58,42 @@ module.exports = async (req, res) => {
         Authorization: authHeader,
         Accept: "application/json",
       },
+      responseType: "text",
     });
 
-    const data = response.data;
+    // 🔥 RAW RESPONSE
+    const raw = response.data;
 
-    if (!data.success) {
+    console.log("RAW NETSUITE RESPONSE:", raw);
 
+    let parsed;
+
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      throw new Error("No se pudo parsear JSON de NetSuite: " + raw);
+    }
+
+    // 🔥 VALIDACIÓN DE STATUS
+    if (!parsed.success) {
       return res.status(500).json({
         success: false,
-        error: data.error || data.message,
+        error: parsed.message || parsed.error,
       });
-
     }
 
     return res.status(200).json({
       success: true,
-      registros: data.count,
-      mensaje: data.message,
-      fecha: new Date().toISOString(),
+      status: parsed.status,
+      message: parsed.message,
+      count: parsed.count,
     });
 
   } catch (err) {
 
     return res.status(500).json({
       success: false,
-      error:
-        err.response?.data ||
-        err.message,
+      error: err.response?.data || err.message,
     });
-
   }
-
 };
