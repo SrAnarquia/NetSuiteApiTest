@@ -39,25 +39,45 @@ module.exports = async (req, res) => {
 
     const oauthData = oauth.authorize(request_data, token);
 
-    const authHeader = oauth.toHeader(oauthData);
+    const authHeader =
+      "OAuth " +
+      `realm="${process.env.ACCOUNT_ID}",` +
+      `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
+      `oauth_token="${oauthData.oauth_token}",` +
+      `oauth_signature_method="${oauthData.oauth_signature_method}",` +
+      `oauth_timestamp="${oauthData.oauth_timestamp}",` +
+      `oauth_nonce="${oauthData.oauth_nonce}",` +
+      `oauth_version="1.0",` +
+      `oauth_signature="${encodeURIComponent(
+        oauthData.oauth_signature
+      )}"`;
 
     const response = await axios.get(baseUrl, {
       params,
       headers: {
-        ...authHeader,
+        Authorization: authHeader,
         Accept: "application/json",
       },
       responseType: "text",
     });
 
-    const json =
-      typeof response.data === "string"
-        ? JSON.parse(response.data)
-        : response.data;
+    let json;
 
-    return res.status(200).json(json.data || []);
+    if (typeof response.data === "string") {
+      json = JSON.parse(response.data);
+    } else {
+      json = response.data;
+    }
+
+    return res.status(200).json(json);
+
   } catch (err) {
-    console.error(err);
+
+    console.error(
+      "NETSUITE ERROR:",
+      err.response?.status,
+      err.response?.data || err.message
+    );
 
     return res.status(500).json({
       success: false,

@@ -73,7 +73,7 @@ module.exports = async (req, res) => {
       json = raw;
     }
 
-    // 🔥 SOLO DATA (como pediste)
+    // SOLO DATA (como pediste)
     const data = json.data ?? json;
 
     return res.status(200).json(data);
