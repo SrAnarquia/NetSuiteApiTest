@@ -23,10 +23,10 @@ module.exports = async (req, res) => {
   try {
 
     const baseUrl =
-      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=5156&deploy=1";
+      "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
     const params = {
-      script: "5155",
+      script: "5156",
       deploy: "1",
     };
 
