@@ -31,16 +31,19 @@ module.exports = async (req, res) => {
       deploy: "1",
     };
 
+    // URL completa para que la firma incluya query params
+    const fullUrl =
+      `${baseUrl}?script=${params.script}&deploy=${params.deploy}`;
+
     const request_data = {
-      url: baseUrl,
+      url: fullUrl,
       method: "GET",
-      data: params,
     };
 
     const oauthData = oauth.authorize(request_data, token);
 
     const authHeader =
-      'OAuth ' +
+      "OAuth " +
       `realm="${process.env.ACCOUNT_ID}",` +
       `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
       `oauth_token="${oauthData.oauth_token}",` +
@@ -52,28 +55,53 @@ module.exports = async (req, res) => {
         oauthData.oauth_signature
       )}"`;
 
-    const response = await axios.get(baseUrl, {
-      params,
+    const response = await axios.get(fullUrl, {
       headers: {
         Authorization: authHeader,
         Accept: "application/json",
       },
       responseType: "text",
+      timeout: 120000,
     });
 
-    let json;
+    let result = response.data;
 
-    if (typeof response.data === "string") {
-      json = JSON.parse(response.data);
-    } else {
-      json = response.data;
+    // Si NetSuite devolvió texto JSON
+    if (typeof result === "string") {
+      try {
+        result = JSON.parse(result);
+      } catch (e) {
+        return res.status(500).json({
+          success: false,
+          error: "NetSuite devolvió texto no válido como JSON",
+          raw: result,
+        });
+      }
     }
 
-    return res.status(200).json(json.data || []);
+    // Si data viene stringify dentro del objeto
+    if (
+      result &&
+      typeof result.data === "string"
+    ) {
+      try {
+        result.data = JSON.parse(result.data);
+      } catch (e) {
+        // lo dejamos igual si no es JSON válido
+      }
+    }
+
+    return res.status(200).json(result);
+
   } catch (err) {
-    return res.status(500).json({
+    return res.status(
+      err.response?.status || 500
+    ).json({
       success: false,
-      error: err.response?.data || err.message,
+      error:
+        err.response?.data ||
+        err.message ||
+        "Error desconocido",
     });
   }
 };
