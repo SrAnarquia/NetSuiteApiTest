@@ -90,8 +90,8 @@ module.exports = async (req, res) => {
         // lo dejamos igual si no es JSON válido
       }
     }
-
-    return res.status(200).json(result);
+    
+    return res.status(200).json(result.data || []);
 
   } catch (err) {
     return res.status(
