@@ -4,7 +4,7 @@ module.exports = async (req, res) => {
   try {
 
     const response = await axios.get(
-      "https://script.google.com/macros/s/AKfycbzg6c30AGMzvL1Pvhc9WxQFqv1QHmM7mZtzKTUBRttlIT01Lqzkf3wTKK884-kDIFPS/exec",
+      "https://script.google.com/macros/s/AKfycbzVQQNbR9ncKNStobX5QSw5NHyO12imT8jo_orF31jQBzq6Z3QICnu89ILGvPOWhg9o/exec",
       {
         timeout: 30000,
         headers: {
