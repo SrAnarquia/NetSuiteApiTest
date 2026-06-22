@@ -24,16 +24,13 @@ const token = {
 };
 
 module.exports = async (req, res) => {
-
   try {
-
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
     const params = {
-      script: "5126",
+      script: "5177",
       deploy: "1",
-      subsidiary: req.query.subsidiary || "2",
     };
 
     const request_data = {
@@ -42,11 +39,10 @@ module.exports = async (req, res) => {
       data: params,
     };
 
-    const oauthData =
-      oauth.authorize(request_data, token);
+    const oauthData = oauth.authorize(request_data, token);
 
     const authHeader =
-      'OAuth ' +
+      "OAuth " +
       `realm="${process.env.ACCOUNT_ID}",` +
       `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
       `oauth_token="${oauthData.oauth_token}",` +
@@ -59,75 +55,29 @@ module.exports = async (req, res) => {
       )}"`;
 
     const response = await axios.get(baseUrl, {
-
       params,
-
       headers: {
         Authorization: authHeader,
         Accept: "application/json",
       },
-
-      responseType: "text"
+      responseType: "text",
     });
 
-    /*
-      NetSuite devuelve string
-    */
+    // NetSuite devuelve un string
     const parsedData =
       typeof response.data === "string"
         ? JSON.parse(response.data)
         : response.data;
 
-    /*
-      OBTENER SOLO DATA
-    */
-    const restletData =
-      parsedData.data || parsedData;
-
-    /*
-      TRANSFORMAR PERIODS
-    */
-    const formattedPeriods =
-      (restletData.periods || []).map(period => {
-
-        const weekStart =
-          Object.keys(period)[0];
-
-        const value =
-          period[weekStart];
-
-        return {
-          weekStart,
-
-          startDate:
-            value.startDate,
-
-          accountsReceivable:
-            value.accountsReceivable,
-
-          salesOrders:
-            value.salesOrders,
-
-          totalInflow:
-            value.totalInflow
-        };
-      });
-
-    /*
-      DEVOLVER SOLO ARRAY
-    */
-    return res.status(200).json(
-      formattedPeriods
-    );
+    // Devolver únicamente el arreglo data
+    return res.status(200).json(parsedData.data || []);
 
   } catch (err) {
 
     return res.status(500).json({
       success: false,
-
-      error:
-        err.response?.data ||
-        err.message,
+      error: err.response?.data || err.message,
     });
+
   }
 };
