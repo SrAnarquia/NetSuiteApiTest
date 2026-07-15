@@ -27,30 +27,19 @@ module.exports = async (req, res) => {
 
   try {
 
-    /*
-      RESTLET 5119
-    */
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-    const subsidiary =
-      req.query.subsidiary || 2;
+    const params = {
+      script: "5126",
+      deploy: "1",
+      subsidiary: req.query.subsidiary || "2",
+    };
 
-    /*
-      IMPORTANTE:
-      request_data.data
-      y axios params
-      deben ser EXACTAMENTE iguales
-    */
     const request_data = {
       url: baseUrl,
       method: "GET",
-
-      data: {
-        script: "5119",
-        deploy: "1",
-        subsidiary
-      },
+      data: params,
     };
 
     const oauthData =
@@ -71,25 +60,18 @@ module.exports = async (req, res) => {
 
     const response = await axios.get(baseUrl, {
 
-      params: {
-        script: "5119",
-        deploy: "1",
-        subsidiary
-      },
+      params,
 
       headers: {
         Authorization: authHeader,
         Accept: "application/json",
       },
 
-      /*
-        NetSuite devuelve STRING
-      */
       responseType: "text"
     });
 
     /*
-      Parse seguro
+      NetSuite devuelve string
     */
     const parsedData =
       typeof response.data === "string"
@@ -97,11 +79,46 @@ module.exports = async (req, res) => {
         : response.data;
 
     /*
-      PERFECTO PARA POWERQUERY
+      OBTENER SOLO DATA
     */
-    return res.status(200).json([
-      parsedData.data
-    ]);
+    const restletData =
+      parsedData.data || parsedData;
+
+    /*
+      TRANSFORMAR PERIODS
+    */
+    const formattedPeriods =
+      (restletData.periods || []).map(period => {
+
+        const weekStart =
+          Object.keys(period)[0];
+
+        const value =
+          period[weekStart];
+
+        return {
+          weekStart,
+
+          startDate:
+            value.startDate,
+
+          accountsReceivable:
+            value.accountsReceivable,
+
+          salesOrders:
+            value.salesOrders,
+
+          totalInflow:
+            value.totalInflow
+        };
+      });
+
+    /*
+      DEVOLVER SOLO ARRAY
+    */
+    return res.status(200).json(
+      formattedPeriods
+    );
 
   } catch (err) {
 
