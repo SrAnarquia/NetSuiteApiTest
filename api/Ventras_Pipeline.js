@@ -7,14 +7,9 @@ const oauth = OAuth({
     key: process.env.CONSUMER_KEY,
     secret: process.env.CONSUMER_SECRET,
   },
-
   signature_method: "HMAC-SHA256",
-
   hash_function(base_string, key) {
-    return crypto
-      .createHmac("sha256", key)
-      .update(base_string)
-      .digest("base64");
+    return crypto.createHmac("sha256", key).update(base_string).digest("base64");
   },
 });
 
@@ -27,29 +22,23 @@ module.exports = async (req, res) => {
 
   try {
 
-    /*
-      RESTLET 5118
-    */
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-    const subsidiary =
-      req.query.subsidiary || 2;
+    const params = {
+      script: "5322",
+      deploy: "1",
+    };
 
     const request_data = {
       url: baseUrl,
       method: "GET",
-
-      data: {
-        script: "5118",
-        deploy: "1",
-        subsidiary
-      },
+      data: params,
     };
 
-    const oauthData =
-      oauth.authorize(request_data, token);
+    const oauthData = oauth.authorize(request_data, token);
 
+    // 🔥 EXACTAMENTE TU MISMO ESTILO DE AUTH HEADER
     const authHeader =
       'OAuth ' +
       `realm="${process.env.ACCOUNT_ID}",` +
@@ -59,46 +48,40 @@ module.exports = async (req, res) => {
       `oauth_timestamp="${oauthData.oauth_timestamp}",` +
       `oauth_nonce="${oauthData.oauth_nonce}",` +
       `oauth_version="1.0",` +
-      `oauth_signature="${encodeURIComponent(
-        oauthData.oauth_signature
-      )}"`;
+      `oauth_signature="${encodeURIComponent(oauthData.oauth_signature)}"`;
 
     const response = await axios.get(baseUrl, {
-
-      params: {
-        script: "5118",
-        deploy: "1",
-        subsidiary
-      },
-
+      params,
       headers: {
         Authorization: authHeader,
         Accept: "application/json",
       },
-
-      responseType: "text"
+      responseType: "text",
     });
 
-    const parsedData =
-      typeof response.data === "string"
-        ? JSON.parse(response.data)
-        : response.data;
+    let raw = response.data;
 
-    /*
-      PERFECTO PARA POWERQUERY
-    */
-    return res.status(200).json([
-      parsedData.data
-    ]);
+    let json;
+
+    if (typeof raw === "string") {
+      try {
+        json = JSON.parse(raw);
+      } catch (e) {
+        throw new Error("NetSuite no devolvió JSON válido");
+      }
+    } else {
+      json = raw;
+    }
+
+    // SOLO DATA (como pediste)
+    const data = json.data ?? json;
+
+    return res.status(200).json(data);
 
   } catch (err) {
 
     return res.status(500).json({
-      success: false,
-
-      error:
-        err.response?.data ||
-        err.message,
+      error: err.response?.data || err.message,
     });
   }
 };
