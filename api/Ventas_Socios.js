@@ -26,10 +26,11 @@ module.exports = async (req, res) => {
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
-    // Este RESTlet (customsearch3005) no requiere parámetros adicionales,
-    // solo script y deploy. Si en el futuro necesitas filtrar, agrégalos aquí.
+    // ⚠️ AJUSTA "script" al ID real del RESTlet que expone customsearch8850
+    // (el que devuelve el campo "Departamento"). El "5328" del ejemplo
+    // anterior corresponde a customsearch3005, que NO trae Departamento.
     const params = {
-      script: "5328",
+      script: "XXXX", // <-- reemplaza por el script ID real de customsearch8850
       deploy: "1",
     };
 
@@ -78,7 +79,7 @@ module.exports = async (req, res) => {
     }
 
     /*
-      La estructura real que devuelve tu RESTlet es:
+      Estructura real que devuelve el RESTlet (customsearch8850):
       {
         success: true,
         count: N,
@@ -87,7 +88,9 @@ module.exports = async (req, res) => {
             "ID": "...",
             "ID interno": "...",
             "Nombre": "...",
-            "Acceso de inicio de sesión": "true" | "false"
+            "Acceso de inicio de sesión": "true" | "false",
+            "Departamento": "..."   // ya viene como texto legible (getText),
+                                     // no como ID, gracias al fix en el RESTlet
           },
           ...
         ]
@@ -97,13 +100,13 @@ module.exports = async (req, res) => {
 
     /*
       TRANSFORMAR A UN FORMATO MÁS AMIGABLE (camelCase, boolean real)
-      Ajusta las keys si tu integración necesita otros nombres.
     */
     const formattedUsers = rawData.map((item) => ({
       id: item["ID"],
       internalId: item["ID interno"],
       name: item["Nombre"],
       hasLoginAccess: item["Acceso de inicio de sesión"] === "true",
+      departamento: item["Departamento"] || "",
     }));
 
     return res.status(200).json({
