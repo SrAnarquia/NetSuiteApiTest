@@ -7,9 +7,7 @@ const oauth = OAuth({
     key: process.env.CONSUMER_KEY,
     secret: process.env.CONSUMER_SECRET,
   },
-
   signature_method: "HMAC-SHA256",
-
   hash_function(base_string, key) {
     return crypto
       .createHmac("sha256", key)
@@ -24,16 +22,15 @@ const token = {
 };
 
 module.exports = async (req, res) => {
-
   try {
-
     const baseUrl =
       "https://5227067.restlets.api.netsuite.com/app/site/hosting/restlet.nl";
 
+    // Este RESTlet (customsearch3005) no requiere parámetros adicionales,
+    // solo script y deploy. Si en el futuro necesitas filtrar, agrégalos aquí.
     const params = {
-      script: "5126",
+      script: "5328",
       deploy: "1",
-      subsidiary: req.query.subsidiary || "2",
     };
 
     const request_data = {
@@ -42,11 +39,10 @@ module.exports = async (req, res) => {
       data: params,
     };
 
-    const oauthData =
-      oauth.authorize(request_data, token);
+    const oauthData = oauth.authorize(request_data, token);
 
     const authHeader =
-      'OAuth ' +
+      "OAuth " +
       `realm="${process.env.ACCOUNT_ID}",` +
       `oauth_consumer_key="${oauthData.oauth_consumer_key}",` +
       `oauth_token="${oauthData.oauth_token}",` +
@@ -54,80 +50,71 @@ module.exports = async (req, res) => {
       `oauth_timestamp="${oauthData.oauth_timestamp}",` +
       `oauth_nonce="${oauthData.oauth_nonce}",` +
       `oauth_version="1.0",` +
-      `oauth_signature="${encodeURIComponent(
-        oauthData.oauth_signature
-      )}"`;
+      `oauth_signature="${encodeURIComponent(oauthData.oauth_signature)}"`;
 
     const response = await axios.get(baseUrl, {
-
       params,
-
       headers: {
         Authorization: authHeader,
         Accept: "application/json",
       },
-
-      responseType: "text"
+      responseType: "text",
     });
 
     /*
-      NetSuite devuelve string
+      NetSuite devuelve el body como string (por el JSON.stringify del RESTlet),
+      así que hay que parsearlo aquí.
     */
     const parsedData =
       typeof response.data === "string"
         ? JSON.parse(response.data)
         : response.data;
 
-    /*
-      OBTENER SOLO DATA
-    */
-    const restletData =
-      parsedData.data || parsedData;
-
-    /*
-      TRANSFORMAR PERIODS
-    */
-    const formattedPeriods =
-      (restletData.periods || []).map(period => {
-
-        const weekStart =
-          Object.keys(period)[0];
-
-        const value =
-          period[weekStart];
-
-        return {
-          weekStart,
-
-          startDate:
-            value.startDate,
-
-          accountsReceivable:
-            value.accountsReceivable,
-
-          salesOrders:
-            value.salesOrders,
-
-          totalInflow:
-            value.totalInflow
-        };
+    if (parsedData.success === false) {
+      return res.status(500).json({
+        success: false,
+        error: parsedData.error || "Error desconocido desde NetSuite",
       });
+    }
 
     /*
-      DEVOLVER SOLO ARRAY
+      La estructura real que devuelve tu RESTlet es:
+      {
+        success: true,
+        count: N,
+        data: [
+          {
+            "ID": "...",
+            "ID interno": "...",
+            "Nombre": "...",
+            "Acceso de inicio de sesión": "true" | "false"
+          },
+          ...
+        ]
+      }
     */
-    return res.status(200).json(
-      formattedPeriods
-    );
+    const rawData = parsedData.data || [];
 
+    /*
+      TRANSFORMAR A UN FORMATO MÁS AMIGABLE (camelCase, boolean real)
+      Ajusta las keys si tu integración necesita otros nombres.
+    */
+    const formattedUsers = rawData.map((item) => ({
+      id: item["ID"],
+      internalId: item["ID interno"],
+      name: item["Nombre"],
+      hasLoginAccess: item["Acceso de inicio de sesión"] === "true",
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: formattedUsers.length,
+      data: formattedUsers,
+    });
   } catch (err) {
-
     return res.status(500).json({
       success: false,
-
-      error:
-        err.response?.data ||
-        err.message,
+      error: err.response?.data || err.message,
     });
   }
 };
