@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
     // (el que devuelve el campo "Departamento"). El "5328" del ejemplo
     // anterior corresponde a customsearch3005, que NO trae Departamento.
     const params = {
-      script: "customscript5328", // <-- reemplaza por el script ID real de customsearch8850
+      script: "XXXX", // <-- reemplaza por el script ID real de customsearch8850
       deploy: "1",
     };
 
@@ -109,12 +109,12 @@ module.exports = async (req, res) => {
       departamento: item["Departamento"] || "",
     }));
 
-    return res.status(200).json
-
+    return res.status(200).json({
       success: true,
       count: formattedUsers.length,
       data: formattedUsers,
     });
+
   } catch (err) {
     return res.status(500).json({
       success: false,
